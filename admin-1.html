@@ -753,6 +753,24 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
           <h3 style="margin-bottom:6px;font-size:1.05rem"><i class="fas fa-fire" style="color:var(--accent);margin-right:6px"></i>Konfigurasi Firebase</h3>
           <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:14px">Config ini dipakai bersama oleh SnapAbsen mobile dan panel admin ini (disimpan di browser yang sama).</p>
           <div class="badge badge-gray" id="fb-status-badge" style="margin-bottom:16px"><i class="fas fa-circle" style="font-size:.5rem"></i>&nbsp; Memeriksa...</div>
+
+          <!-- Load dari file JSON -->
+          <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:12px 14px;margin-bottom:16px">
+            <div style="font-weight:700;font-size:.88rem;color:#15803d;margin-bottom:5px"><i class="fas fa-file-import"></i> Load dari File Config</div>
+            <div style="font-size:.78rem;color:#166534;margin-bottom:10px">Pilih file <b>firebase-config.json</b> yang sudah Anda simpan. Semua field akan terisi otomatis.</div>
+            <label style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:10px;background:#16a34a;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;font-size:.88rem;box-sizing:border-box">
+              <i class="fas fa-folder-open"></i> Pilih File firebase-config.json
+              <input type="file" id="fb-config-file" accept=".json,application/json" style="display:none" onchange="adminLoadConfigFile(this)">
+            </label>
+            <div id="fb-file-status" style="display:none;margin-top:8px;font-size:.78rem;font-weight:700;text-align:center;padding:6px;border-radius:6px"></div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <div style="flex:1;height:1px;background:var(--border)"></div>
+            <span style="font-size:.75rem;color:var(--text-muted);white-space:nowrap">atau isi manual</span>
+            <div style="flex:1;height:1px;background:var(--border)"></div>
+          </div>
+
           <div class="fm-group"><label>API Key *</label><input type="text" id="fb-apiKey" class="fm-input" placeholder="AIzaSy..."></div>
           <div class="fm-group"><label>Auth Domain *</label><input type="text" id="fb-authDomain" class="fm-input" placeholder="project.firebaseapp.com"></div>
           <div class="fm-group"><label>Project ID *</label><input type="text" id="fb-projectId" class="fm-input" placeholder="your-project-id"></div>
@@ -2053,6 +2071,52 @@ function updateFbStatusBadge(){
   else if(firebaseConfig?.projectId){ b.className='badge badge-orange'; b.innerHTML='<i class="fas fa-circle" style="font-size:.5rem"></i>&nbsp; Menghubungkan...'; }
   else { b.className='badge badge-gray'; b.innerHTML='<i class="fas fa-circle" style="font-size:.5rem"></i>&nbsp; Belum diatur'; }
 }
+
+function adminLoadConfigFile(input){
+  const file = input.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById('fb-file-status');
+  statusEl.style.display = 'block';
+  statusEl.style.background = '#eff6ff';
+  statusEl.style.color = '#1d4ed8';
+  statusEl.textContent = '⏳ Membaca file...';
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      const raw = e.target.result;
+      // Support both plain JSON object and Firebase SDK snippet (firebaseConfig = {...})
+      let cfg;
+      try { cfg = JSON.parse(raw); }
+      catch(_){
+        // Try extract object literal from SDK snippet
+        const match = raw.match(/const\s+firebaseConfig\s*=\s*(\{[\s\S]*?\});/);
+        if(match) cfg = JSON.parse(match[1].replace(/(\w+):/g,'"$1":').replace(/'/g,'"'));
+        else throw new Error('Format tidak dikenali');
+      }
+      // Support nested { firebaseConfig: {...} } or flat object
+      if(cfg.firebaseConfig) cfg = cfg.firebaseConfig;
+      if(!cfg.apiKey || !cfg.projectId || !cfg.appId){
+        statusEl.style.background='#fef2f2'; statusEl.style.color='#dc2626';
+        statusEl.textContent='❌ File tidak valid — pastikan berisi apiKey, projectId, appId';
+        return;
+      }
+      const fields = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId','databaseURL'];
+      fields.forEach(f=>{ const el=document.getElementById('fb-'+f); if(el) el.value=cfg[f]||''; });
+      statusEl.style.background='#f0fdf4'; statusEl.style.color='#15803d';
+      statusEl.textContent='✅ Config berhasil dimuat! Klik Simpan & Hubungkan untuk menyimpan.';
+      input.value='';
+    }catch(err){
+      statusEl.style.background='#fef2f2'; statusEl.style.color='#dc2626';
+      statusEl.textContent='❌ Gagal membaca file: '+err.message;
+    }
+  };
+  reader.onerror = function(){
+    statusEl.style.background='#fef2f2'; statusEl.style.color='#dc2626';
+    statusEl.textContent='❌ Gagal membaca file.';
+  };
+  reader.readAsText(file);
+}
+
 function testFirebaseConn(){
   const pid=document.getElementById('fb-projectId').value.trim(), key=document.getElementById('fb-apiKey').value.trim();
   if(!pid||!key){showToast('Isi Project ID dan API Key','warning');return;}
