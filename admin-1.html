@@ -446,10 +446,11 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
             </div>
           </div>
           <!-- Summary cards -->
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px">
             <div class="card stat-card"><div class="stat-value" id="pay-s-karyawan" style="color:var(--primary)">0</div><div class="stat-label">Total Karyawan</div></div>
-            <div class="card stat-card"><div class="stat-value" id="pay-s-total" style="color:var(--green)">Rp 0</div><div class="stat-label">Total Gaji</div></div>
+            <div class="card stat-card"><div class="stat-value" id="pay-s-total" style="color:var(--green)">Rp 0</div><div class="stat-label">Total Gaji Bersih</div></div>
             <div class="card stat-card"><div class="stat-value" id="pay-s-potongan" style="color:var(--red)">Rp 0</div><div class="stat-label">Total Potongan</div></div>
+            <div class="card stat-card"><div class="stat-value" id="pay-s-pph" style="color:var(--orange,#f97316)">Rp 0</div><div class="stat-label">Total PPh 21</div></div>
           </div>
           <!-- Table -->
           <div class="card">
@@ -494,7 +495,7 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
             <div id="sp-karyawan-list"><div class="empty-state"><i class="fas fa-users"></i><p>Memuat data karyawan...</p></div></div>
           </div>
           <!-- Modal edit gaji -->
-          <div id="sp-modal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center">
+          <div id="sp-modal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.5);align-items:center;justify-content:center">
             <div class="card" style="width:100%;max-width:500px;max-height:90vh;overflow-y:auto;margin:16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
                 <h3 style="font-size:1rem" id="sp-modal-title">Setting Gaji</h3>
@@ -511,6 +512,40 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
                 <div class="fm-group"><label>Potongan Lainnya (Rp)</label><input type="number" id="sp-pot-lain" class="fm-input" placeholder="0"></div>
                 <div class="fm-group"><label>Potongan Terlambat/x (Rp)</label><input type="number" id="sp-pot-telat" class="fm-input" placeholder="0"></div>
                 <div class="fm-group"><label>Potongan Alpha/hari (Rp)</label><input type="number" id="sp-pot-alpha" class="fm-input" placeholder="0"></div>
+                <div class="fm-group" style="grid-column:1/-1">
+                  <div style="background:#eff6ff;border-radius:8px;padding:10px 12px;margin-bottom:4px">
+                    <div style="font-weight:700;font-size:.82rem;color:var(--primary);margin-bottom:8px"><i class="fas fa-percent"></i> PPh 21 TER (PMK 168/2023)</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                      <div class="fm-group" style="margin:0">
+                        <label>Status PTKP</label>
+                        <select id="sp-ptkp" class="fm-input" onchange="spPreviewTER()">
+                          <option value="TK0">TK/0 — Tidak Kawin, 0 tanggungan</option>
+                          <option value="TK1">TK/1 — Tidak Kawin, 1 tanggungan</option>
+                          <option value="TK2">TK/2 — Tidak Kawin, 2 tanggungan</option>
+                          <option value="TK3">TK/3 — Tidak Kawin, 3 tanggungan</option>
+                          <option value="K0">K/0 — Kawin, 0 tanggungan</option>
+                          <option value="K1">K/1 — Kawin, 1 tanggungan</option>
+                          <option value="K2">K/2 — Kawin, 2 tanggungan</option>
+                          <option value="K3">K/3 — Kawin, 3 tanggungan</option>
+                          <option value="KI0">K/I/0 — Kawin, penghasilan digabung, 0 tanggungan</option>
+                          <option value="KI1">K/I/1 — Kawin, penghasilan digabung, 1 tanggungan</option>
+                          <option value="KI2">K/I/2 — Kawin, penghasilan digabung, 2 tanggungan</option>
+                          <option value="KI3">K/I/3 — Kawin, penghasilan digabung, 3 tanggungan</option>
+                        </select>
+                      </div>
+                      <div class="fm-group" style="margin:0">
+                        <label>Hitung PPh 21</label>
+                        <select id="sp-pph-aktif" class="fm-input">
+                          <option value="1">Aktif (potong PPh 21)</option>
+                          <option value="0">Tidak aktif</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div id="sp-ter-preview" style="margin-top:8px;font-size:.78rem;color:#1d4ed8;display:none">
+                      <i class="fas fa-info-circle"></i> <span id="sp-ter-preview-text"></span>
+                    </div>
+                  </div>
+                </div>
                 <div class="fm-group" style="grid-column:1/-1"><label>Catatan</label><input type="text" id="sp-catatan" class="fm-input" placeholder="Opsional..."></div>
               </div>
               <input type="hidden" id="sp-uid">
@@ -2894,30 +2929,44 @@ async function payrollHitung(){
       const alpha = uAbs.filter(a=>a.keterangan==='alpha').length;
 
       const totalTunjangan = tMakan+tTransport+tJabatan+tLain;
+      const bruto = gapok + totalTunjangan;
       const totPotonganPersen = (gapok*(bpjsKes+bpjsTk)/100);
       const totPotonganFixed = potLain + (telat*potTelat) + (alpha*potAlpha);
-      const totalPotongan = totPotonganPersen + totPotonganFixed;
-      const gajiBersih = gapok + totalTunjangan - totalPotongan;
 
-      return { uid:u.uid, nama:u.name||'—', nik:u.nik||'—', gapok, totalTunjangan, totalPotongan, gajiBersih, hariHadir, telat, alpha };
+      // PPh 21 TER (PMK 168/2023)
+      const ptkp = g.ptkp || 'TK0';
+      const pphAktif = g.pphAktif !== undefined ? +g.pphAktif : 1;
+      const { tarif: terTarif, pph: pph21 } = pphAktif ? hitungPPh21TER(bruto, ptkp) : { tarif:0, pph:0 };
+
+      const totalPotongan = totPotonganPersen + totPotonganFixed + pph21;
+      const gajiBersih = bruto - totalPotongan;
+
+      return { uid:u.uid, nama:u.name||'—', nik:u.nik||'—', gapok, totalTunjangan, bruto, totPotonganPersen, totPotonganFixed, pph21, terTarif, ptkpLabel:PTKP_LABEL[ptkp]||ptkp, totalPotongan, gajiBersih, hariHadir, telat, alpha };
     });
 
     const totalGaji = payrollResult.reduce((s,r)=>s+r.gajiBersih,0);
     const totalPot = payrollResult.reduce((s,r)=>s+r.totalPotongan,0);
+    const totalPPh = payrollResult.reduce((s,r)=>s+r.pph21,0);
     document.getElementById('pay-s-karyawan').textContent = payrollResult.length;
     document.getElementById('pay-s-total').textContent = 'Rp '+totalGaji.toLocaleString('id-ID');
     document.getElementById('pay-s-potongan').textContent = 'Rp '+totalPot.toLocaleString('id-ID');
+    const pphCard = document.getElementById('pay-s-pph');
+    if(pphCard) pphCard.textContent = 'Rp '+totalPPh.toLocaleString('id-ID');
 
-    tableEl.innerHTML='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>NIK</th><th>Nama</th><th>Hari Hadir</th><th>Terlambat</th><th>Alpha</th><th>Gaji Pokok</th><th>Tunjangan</th><th>Potongan</th><th>Gaji Bersih</th></tr></thead><tbody>'+
+    tableEl.innerHTML='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>NIK</th><th>Nama</th><th>PTKP</th><th>Hari Hadir</th><th>Terlambat</th><th>Alpha</th><th>Gaji Pokok</th><th>Tunjangan</th><th>Bruto</th><th>BPJS+Pot</th><th>TER%</th><th>PPh 21</th><th>Gaji Bersih</th></tr></thead><tbody>'+
       payrollResult.map(r=>`<tr>
         <td>${r.nik}</td><td><b>${r.nama}</b></td>
+        <td><span class="badge badge-blue" style="font-size:.7rem">${r.ptkpLabel}</span></td>
         <td style="text-align:center">${r.hariHadir}</td>
         <td style="text-align:center;color:var(--yellow)">${r.telat}</td>
         <td style="text-align:center;color:var(--red)">${r.alpha}</td>
         <td>Rp ${r.gapok.toLocaleString('id-ID')}</td>
         <td style="color:var(--green)">Rp ${r.totalTunjangan.toLocaleString('id-ID')}</td>
-        <td style="color:var(--red)">Rp ${r.totalPotongan.toLocaleString('id-ID')}</td>
-        <td><b>Rp ${r.gajiBersih.toLocaleString('id-ID')}</b></td>
+        <td style="font-weight:700">Rp ${r.bruto.toLocaleString('id-ID')}</td>
+        <td style="color:var(--red)">Rp ${(r.totPotonganPersen+r.totPotonganFixed).toLocaleString('id-ID')}</td>
+        <td style="text-align:center">${r.pph21>0?r.terTarif+'%':'—'}</td>
+        <td style="color:#f97316;font-weight:700">${r.pph21>0?'Rp '+r.pph21.toLocaleString('id-ID'):'—'}</td>
+        <td><b style="color:var(--green)">Rp ${r.gajiBersih.toLocaleString('id-ID')}</b></td>
       </tr>`).join('')+
       '</tbody></table></div>';
   }catch(e){ tableEl.innerHTML='<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Gagal: '+e.message+'</p></div>'; }
@@ -2926,9 +2975,9 @@ async function payrollHitung(){
 function payrollExport(){
   if(!payrollResult.length){ showToast('Hitung payroll dulu','warning'); return; }
   const bulan = document.getElementById('pay-bulan').value;
-  let csv = 'NIK,Nama,Hari Hadir,Terlambat,Alpha,Gaji Pokok,Tunjangan,Potongan,Gaji Bersih\n';
+  let csv = 'NIK,Nama,PTKP,Hari Hadir,Terlambat,Alpha,Gaji Pokok,Tunjangan,Bruto,BPJS+Potongan,TER%,PPh 21,Gaji Bersih\n';
   payrollResult.forEach(r=>{
-    csv += [r.nik,r.nama,r.hariHadir,r.telat,r.alpha,r.gapok,r.totalTunjangan,r.totalPotongan,r.gajiBersih].join(',')+'\n';
+    csv += [r.nik,r.nama,r.ptkpLabel,r.hariHadir,r.telat,r.alpha,r.gapok,r.totalTunjangan,r.bruto,Math.round(r.totPotonganPersen+r.totPotonganFixed),r.pph21>0?r.terTarif+'%':'0%',r.pph21,r.gajiBersih].join(',')+'\n';
   });
   const blob = new Blob([csv],{type:'text/csv'});
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
@@ -2988,7 +3037,10 @@ function spOpenModal(uid){
   document.getElementById('sp-pot-telat').value=g.potTelat||'';
   document.getElementById('sp-pot-alpha').value=g.potAlpha||'';
   document.getElementById('sp-catatan').value=g.catatan||'';
-  document.getElementById('sp-modal').style.display='flex';
+  document.getElementById('sp-ptkp').value=g.ptkp||'TK0';
+  document.getElementById('sp-pph-aktif').value=g.pphAktif!==undefined?String(+g.pphAktif):'1';
+  spPreviewTER();
+  const spM=document.getElementById('sp-modal'); spM.style.display='flex'; spM.style.alignItems='center'; spM.style.justifyContent='center';
 }
 
 function spCloseModal(){ document.getElementById('sp-modal').style.display='none'; }
@@ -3007,6 +3059,8 @@ async function spSimpanGaji(){
     potTelat:+document.getElementById('sp-pot-telat').value||0,
     potAlpha:+document.getElementById('sp-pot-alpha').value||0,
     catatan:document.getElementById('sp-catatan').value.trim(),
+    ptkp:document.getElementById('sp-ptkp').value||'TK0',
+    pphAktif:+document.getElementById('sp-pph-aktif').value,
     updatedAt:firebase.firestore.FieldValue.serverTimestamp()
   };
   try{
@@ -3126,6 +3180,107 @@ async function confirmDeleteAbsen(){
 
   btn.disabled = false;
   btn.innerHTML = '<i class="fas fa-trash"></i> Ya, Hapus';
+}
+
+
+// ============================================================
+// PPh 21 TER (PMK 168/2023) — berlaku 1 Jan 2024
+// ============================================================
+
+// Tabel TER Bulanan Kategori A (TK/0, TK/1, K/0) - Pasal 3 PMK 168/2023
+const TER_A = [
+  [5400000,    0],      [5650000,  0.25], [5950000,   0.5],
+  [6300000,    0.75],   [6750000,  1.0],  [7500000,   1.25],
+  [8550000,    1.5],    [9650000,  1.75], [10050000,  2.0],
+  [10350000,   2.25],   [10700000, 2.5],  [11050000,  3.0],
+  [11600000,   3.5],    [12500000, 4.0],  [13750000,  5.0],
+  [15100000,   6.0],    [16950000, 7.0],  [19750000,  8.0],
+  [24150000,   9.0],    [26450000, 10.0], [28000000,  11.0],
+  [30050000,   12.0],   [32400000, 13.0], [35400000,  14.0],
+  [39100000,   15.0],   [43850000, 16.0], [47800000,  17.0],
+  [51400000,   18.0],   [56300000, 19.0], [62200000,  20.0],
+  [66700000,   21.0],   [74500000, 22.0], [86000000,  23.0],
+  [103000000,  24.0],   [Infinity, 25.0]
+];
+
+// Tabel TER Bulanan Kategori B (TK/2, TK/3, K/1, K/I/0)
+const TER_B = [
+  [6200000,    0],      [6500000,  0.25], [6850000,   0.5],
+  [7300000,    0.75],   [9200000,  1.0],  [10750000,  1.25],
+  [11250000,   1.5],    [11600000, 1.75], [12600000,  2.0],
+  [13600000,   3.0],    [14950000, 4.0],  [16400000,  5.0],
+  [18450000,   6.0],    [21850000, 7.0],  [26000000,  8.0],
+  [27700000,   9.0],    [29350000, 10.0], [31450000,  11.0],
+  [33950000,   12.0],   [37100000, 13.0], [41100000,  14.0],
+  [45800000,   15.0],   [49500000, 16.0], [53800000,  17.0],
+  [58500000,   18.0],   [64000000, 19.0], [71000000,  20.0],
+  [80000000,   21.0],   [93000000, 22.0], [109000000, 23.0],
+  [Infinity,   24.0]
+];
+
+// Tabel TER Bulanan Kategori C (K/2, K/I/1, K/3, K/I/2, K/I/3)
+const TER_C = [
+  [6600000,    0],      [6950000,  0.25], [7350000,   0.5],
+  [7800000,    0.75],   [8850000,  1.0],  [9800000,   1.25],
+  [10650000,   1.5],    [11600000, 2.0],  [12600000,  3.0],
+  [13600000,   4.0],    [15600000, 5.0],  [17600000,  6.0],
+  [21400000,   7.0],    [26600000, 8.0],  [28100000,  9.0],
+  [30100000,   10.0],   [32600000, 11.0], [35400000,  12.0],
+  [38900000,   13.0],   [43000000, 14.0], [47400000,  15.0],
+  [51200000,   16.0],   [55800000, 17.0], [60400000,  18.0],
+  [66700000,   19.0],   [74500000, 20.0], [86000000,  21.0],
+  [103000000,  22.0],   [Infinity, 23.0]
+];
+
+const PTKP_KATEGORI = {
+  TK0:'A', TK1:'A', K0:'A',
+  TK2:'B', TK3:'B', K1:'B', KI0:'B',
+  K2:'C',  KI1:'C', K3:'C', KI2:'C', KI3:'C'
+};
+
+const PTKP_LABEL = {
+  TK0:'TK/0', TK1:'TK/1', TK2:'TK/2', TK3:'TK/3',
+  K0:'K/0',   K1:'K/1',   K2:'K/2',   K3:'K/3',
+  KI0:'K/I/0',KI1:'K/I/1',KI2:'K/I/2',KI3:'K/I/3'
+};
+
+function getTerTable(ptkp){
+  const kat = PTKP_KATEGORI[ptkp] || 'A';
+  if(kat==='B') return TER_B;
+  if(kat==='C') return TER_C;
+  return TER_A;
+}
+
+function hitungTER(penghasilanBruto, ptkp){
+  const tabel = getTerTable(ptkp);
+  for(const [batas, tarif] of tabel){
+    if(penghasilanBruto <= batas) return tarif;
+  }
+  return 25;
+}
+
+function hitungPPh21TER(penghasilanBruto, ptkp){
+  const tarif = hitungTER(penghasilanBruto, ptkp);
+  const pph = Math.round(penghasilanBruto * tarif / 100);
+  return { tarif, pph };
+}
+
+function spPreviewTER(){
+  const ptkp = document.getElementById('sp-ptkp')?.value || 'TK0';
+  const gapok = +(document.getElementById('sp-gapok')?.value || 0);
+  const tMakan = +(document.getElementById('sp-t-makan')?.value || 0);
+  const tTransport = +(document.getElementById('sp-t-transport')?.value || 0);
+  const tJabatan = +(document.getElementById('sp-t-jabatan')?.value || 0);
+  const tLain = +(document.getElementById('sp-t-lain')?.value || 0);
+  const bruto = gapok + tMakan + tTransport + tJabatan + tLain;
+  const prevEl = document.getElementById('sp-ter-preview');
+  const prevText = document.getElementById('sp-ter-preview-text');
+  if(!prevEl || !prevText) return;
+  if(!bruto){ prevEl.style.display='none'; return; }
+  const { tarif, pph } = hitungPPh21TER(bruto, ptkp);
+  const kat = PTKP_KATEGORI[ptkp] || 'A';
+  prevText.textContent = `Kategori TER ${kat} | Tarif ${tarif}% | PPh 21 ≈ Rp ${pph.toLocaleString('id-ID')}/bulan (dari bruto Rp ${bruto.toLocaleString('id-ID')})`;
+  prevEl.style.display = 'block';
 }
 
 // ============================================================
