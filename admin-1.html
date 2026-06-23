@@ -557,12 +557,16 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
               <input type="time" id="am-pulang" class="fm-input">
             </div>
             <div class="fm-group">
-              <label>Mesin Absen</label>
-              <input type="text" id="am-mesin" class="fm-input" placeholder="Misal: SB1, SB2, FP-01...">
+              <label>Mesin Absen Masuk (Check In)</label>
+              <input type="text" id="am-mesin-in" class="fm-input" placeholder="Misal: SB1" value="SB1">
+            </div>
+            <div class="fm-group">
+              <label>Mesin Absen Pulang (Check Out)</label>
+              <input type="text" id="am-mesin-out" class="fm-input" placeholder="Misal: SB1" value="SB1">
             </div>
             <div class="fm-group">
               <label>Tipe Absen</label>
-              <input type="text" id="am-tipe" class="fm-input" placeholder="Misal: AT-SB1-0004">
+              <input type="text" id="am-tipe" class="fm-input" placeholder="Misal: AT-SB1-0004" value="AT-SB1-0004">
             </div>
             <div class="fm-group" style="grid-column:1/-1">
               <label>Catatan (opsional)</label>
@@ -2225,10 +2229,10 @@ async function buildSyncDataset(){
     if(!grouped[key]){
       const u=usersByUid[r.uid]||{};
       grouped[key]={ nik:u.nik||'', nama:u.name||r.userName||'—', tanggal:r.date, jamMasuk:'', jamPulang:'',
-        checkInMachine: r.checkInMachine||'SB1', absenceType: r.absenceType||'AT-SB1-0004' };
+        checkInMachine: r.checkInMachine||'SB1', checkOutMachine: r.checkOutMachine||'SB1', absenceType: r.absenceType||'AT-SB1-0004' };
     }
     if(r.type==='masuk'){ grouped[key].jamMasuk=r.time||''; if(r.checkInMachine) grouped[key].checkInMachine=r.checkInMachine; if(r.absenceType) grouped[key].absenceType=r.absenceType; }
-    if(r.type==='pulang') grouped[key].jamPulang=r.time||'';
+    if(r.type==='pulang'){ grouped[key].jamPulang=r.time||''; if(r.checkOutMachine) grouped[key].checkOutMachine=r.checkOutMachine; }
   });
   return Object.values(grouped).sort((a,b)=>a.tanggal>b.tanggal?1:-1);
 }
@@ -2254,7 +2258,7 @@ async function previewSyncData(){
     // Render tabel dengan checkbox
     let html = '<div style="overflow-x:auto"><table class="data-table"><thead><tr>';
     html += '<th style="width:36px"><input type="checkbox" id="sync-chk-all" onchange="syncToggleAll(this)" style="width:16px;height:16px;cursor:pointer"></th>';
-    html += '<th>NIK</th><th>Nama</th><th>Tanggal</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Mesin</th><th>Tipe Absen</th></tr></thead><tbody>';
+    html += '<th>NIK</th><th>Nama</th><th>Tanggal</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Mesin In</th><th>Mesin Out</th><th>Tipe Absen</th></tr></thead><tbody>';
 
     html += rows.map((r,i)=>{
       const canCheck = !!r.nik;
@@ -2267,6 +2271,7 @@ async function previewSyncData(){
         +'<td style="color:var(--green);font-weight:700">'+(r.jamMasuk||'—')+'</td>'
         +'<td style="color:var(--accent);font-weight:700">'+(r.jamPulang||'—')+'</td>'
         +'<td style="font-size:.78rem">'+(r.checkInMachine||'—')+'</td>'
+        +'<td style="font-size:.78rem">'+(r.checkOutMachine||'—')+'</td>'
         +'<td style="font-size:.78rem">'+(r.absenceType||'—')+'</td>'
         +'</tr>';
     }).join('');
@@ -2428,8 +2433,9 @@ async function amSimpan(){
   const jamPulang = document.getElementById('am-pulang').value;
   const ket = document.getElementById('am-ket').value;
   const catatan = document.getElementById('am-catatan').value.trim();
-  const mesinAbsen = document.getElementById('am-mesin').value.trim();
-  const tipeAbsen = document.getElementById('am-tipe').value.trim();
+  const mesinIn = document.getElementById('am-mesin-in').value.trim() || 'SB1';
+  const mesinOut = document.getElementById('am-mesin-out').value.trim() || 'SB1';
+  const tipeAbsen = document.getElementById('am-tipe').value.trim() || 'AT-SB1-0004';
 
   if(!uid){ showToast('Pilih karyawan terlebih dahulu','warning'); return; }
   if(!tgl){ showToast('Pilih tanggal terlebih dahulu','warning'); return; }
@@ -2443,8 +2449,9 @@ async function amSimpan(){
     lat:null, lng:null, accuracy:null, fakeGpsScore:0, gpsWarnings:[],
     photoBase64:null, keterangan: ket, catatan: catatan||'',
     inputManual:true, editedByAdmin:true, editedBy:adminName,
-    checkInMachine: mesinAbsen || 'SB1',
-    absenceType: tipeAbsen || 'AT-SB1-0004',
+    checkInMachine: mesinIn,
+    checkOutMachine: mesinOut,
+    absenceType: tipeAbsen,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
 
@@ -2468,12 +2475,12 @@ async function amSimpan(){
     } else {
       // Hadir: simpan masuk dan/atau pulang
       if(jamMasuk){
-        if(docMasuk) await docMasuk.ref.update({time:jamMasuk,keterangan:ket,catatan:catatan||'',checkInMachine:mesinAbsen||'SB1',absenceType:tipeAbsen||'AT-SB1-0004',editedByAdmin:true,editedBy:adminName,editedAt:firebase.firestore.FieldValue.serverTimestamp()});
+        if(docMasuk) await docMasuk.ref.update({time:jamMasuk,keterangan:ket,catatan:catatan||'',checkInMachine:mesinIn,absenceType:tipeAbsen,editedByAdmin:true,editedBy:adminName,editedAt:firebase.firestore.FieldValue.serverTimestamp()});
         else await firebaseDb.collection('absensi').add({...base, type:'masuk', time:jamMasuk});
       } else if(docMasuk) await docMasuk.ref.delete();
 
       if(jamPulang){
-        if(docPulang) await docPulang.ref.update({time:jamPulang,keterangan:ket,catatan:catatan||'',checkInMachine:mesinAbsen||'SB1',absenceType:tipeAbsen||'AT-SB1-0004',editedByAdmin:true,editedBy:adminName,editedAt:firebase.firestore.FieldValue.serverTimestamp()});
+        if(docPulang) await docPulang.ref.update({time:jamPulang,keterangan:ket,catatan:catatan||'',checkOutMachine:mesinOut,absenceType:tipeAbsen,editedByAdmin:true,editedBy:adminName,editedAt:firebase.firestore.FieldValue.serverTimestamp()});
         else await firebaseDb.collection('absensi').add({...base, type:'pulang', time:jamPulang});
       } else if(docPulang) await docPulang.ref.delete();
     }
@@ -2494,8 +2501,9 @@ function amReset(){
   document.getElementById('am-pulang').value='';
   document.getElementById('am-ket').value='hadir';
   document.getElementById('am-catatan').value='';
-  document.getElementById('am-mesin').value='';
-  document.getElementById('am-tipe').value='';
+  document.getElementById('am-mesin-in').value='SB1';
+  document.getElementById('am-mesin-out').value='SB1';
+  document.getElementById('am-tipe').value='AT-SB1-0004';
   document.getElementById('am-existing-info').style.display='none';
 }
 
@@ -2512,8 +2520,9 @@ async function amLoadRiwayat(){
     const grouped={};
     snap.docs.forEach(d=>{
       const r=d.data();
-      if(!grouped[r.uid]) grouped[r.uid]={uid:r.uid,nama:r.userName||'—',masuk:'—',pulang:'—',ket:r.keterangan||'hadir',catatan:r.catatan||'',mesin:r.checkInMachine||'—',tipe:r.absenceType||'—',oleh:r.editedBy||'Admin'};
-      if(r.type==='masuk'){ grouped[r.uid].masuk=r.time||'—'; if(r.checkInMachine) grouped[r.uid].mesin=r.checkInMachine; if(r.absenceType) grouped[r.uid].tipe=r.absenceType; }
+      if(!grouped[r.uid]) grouped[r.uid]={uid:r.uid,nama:r.userName||'—',masuk:'—',pulang:'—',ket:r.keterangan||'hadir',catatan:r.catatan||'',mesinIn:r.checkInMachine||'—',mesinOut:r.checkOutMachine||'—',tipe:r.absenceType||'—',oleh:r.editedBy||'Admin'};
+      if(r.type==='masuk'){ grouped[r.uid].masuk=r.time||'—'; if(r.checkInMachine) grouped[r.uid].mesinIn=r.checkInMachine; if(r.absenceType) grouped[r.uid].tipe=r.absenceType; }
+      if(r.type==='pulang'){ grouped[r.uid].pulang=r.time||'—'; if(r.checkOutMachine) grouped[r.uid].mesinOut=r.checkOutMachine; }
       if(r.type==='pulang') grouped[r.uid].pulang=r.time||'—';
       if(r.type && r.type!=='masuk' && r.type!=='pulang') grouped[r.uid].ket=r.type;
     });
@@ -2521,8 +2530,8 @@ async function amLoadRiwayat(){
     const ketBadge={hadir:'badge-green',izin:'badge-blue',sakit:'badge-orange',cuti:'badge-gray',alpha:'badge-red'};
     const ketLabel={hadir:'Hadir',izin:'Izin',sakit:'Sakit',cuti:'Cuti',alpha:'Alpha'};
     const rows = Object.values(grouped);
-    container.innerHTML='<table class="data-table"><thead><tr><th>Nama</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Keterangan</th><th>Mesin</th><th>Tipe Absen</th><th>Catatan</th><th>Oleh</th></tr></thead><tbody>'+
-      rows.map(r=>'<tr><td><b>'+r.nama+'</b></td><td style="color:var(--green);font-weight:700">'+(r.masuk||'—')+'</td><td style="color:var(--accent);font-weight:700">'+(r.pulang||'—')+'</td><td><span class="badge '+(ketBadge[r.ket]||'badge-gray')+'">'+(ketLabel[r.ket]||r.ket)+'</span></td><td style="font-size:.78rem">'+(r.mesin||'—')+'</td><td style="font-size:.78rem">'+(r.tipe||'—')+'</td><td style="font-size:.78rem;color:var(--text-muted)">'+(r.catatan||'—')+'</td><td style="font-size:.78rem;color:var(--text-muted)">'+r.oleh+'</td></tr>').join('')+
+    container.innerHTML='<table class="data-table"><thead><tr><th>Nama</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Keterangan</th><th>Mesin In</th><th>Mesin Out</th><th>Tipe Absen</th><th>Catatan</th><th>Oleh</th></tr></thead><tbody>'+
+      rows.map(r=>'<tr><td><b>'+r.nama+'</b></td><td style="color:var(--green);font-weight:700">'+(r.masuk||'—')+'</td><td style="color:var(--accent);font-weight:700">'+(r.pulang||'—')+'</td><td><span class="badge '+(ketBadge[r.ket]||'badge-gray')+'">'+(ketLabel[r.ket]||r.ket)+'</span></td><td style="font-size:.78rem">'+(r.mesinIn||'—')+'</td><td style="font-size:.78rem">'+(r.mesinOut||'—')+'</td><td style="font-size:.78rem">'+(r.tipe||'—')+'</td><td style="font-size:.78rem;color:var(--text-muted)">'+(r.catatan||'—')+'</td><td style="font-size:.78rem;color:var(--text-muted)">'+r.oleh+'</td></tr>').join('')+
       '</tbody></table>';
   }catch(e){ container.innerHTML='<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Gagal memuat: '+e.message+'</p></div>'; }
 }
