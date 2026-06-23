@@ -715,13 +715,23 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
             <div class="fm-group"><label>Tahun</label><input type="number" id="sync-tahun" class="fm-input" value="2026" min="2020" max="2099"></div>
           </div>
           <div style="display:flex;gap:10px">
-            <button class="btn btn-ghost" onclick="previewSyncData()"><i class="fas fa-eye"></i> Preview Data</button>
-            <button class="btn btn-blue" onclick="runManualSync()" id="btn-run-sync"><i class="fas fa-rotate"></i> Jalankan Sync Sekarang</button>
+            <button class="btn btn-blue" onclick="previewSyncData()"><i class="fas fa-eye"></i> Preview & Pilih Data</button>
           </div>
         </div>
 
         <div class="card" id="sync-preview-card" style="display:none;margin-bottom:18px">
-          <h3 style="margin-bottom:14px;font-size:1.05rem">Preview Data yang akan disync</h3>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+            <h3 style="font-size:1.05rem"><i class="fas fa-list-check" style="margin-right:6px;color:var(--primary)"></i>Preview & Pilih Data yang akan Disync</h3>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span id="sync-selected-count" style="font-size:.82rem;color:var(--text-muted)">0 baris dipilih</span>
+              <button class="btn btn-ghost" style="padding:6px 12px;font-size:.78rem" onclick="syncSelectAll()"><i class="fas fa-check-double"></i> Pilih Semua</button>
+              <button class="btn btn-ghost" style="padding:6px 12px;font-size:.78rem" onclick="syncDeselectAll()"><i class="fas fa-xmark"></i> Batal Semua</button>
+              <button class="btn btn-blue" style="padding:6px 14px;font-size:.82rem" onclick="runManualSync()" id="btn-run-sync-preview"><i class="fas fa-rotate"></i> Sync Terpilih</button>
+            </div>
+          </div>
+          <div id="sync-warning-no-nik" style="display:none;background:#fef2f2;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.82rem;color:var(--red)">
+            <i class="fas fa-triangle-exclamation"></i> <span id="sync-warning-text"></span>
+          </div>
           <div id="sync-preview-table"></div>
         </div>
 
@@ -2225,21 +2235,74 @@ async function buildSyncDataset(){
 
 async function previewSyncData(){
   if(!firebaseDb){showToast('Firebase belum terhubung','danger');return;}
-  showToast('Menyiapkan preview...','info');
+  const btn = event?.target?.closest('button');
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner spin"></i> Memuat...'; }
   try{
-    const rows=await buildSyncDataset();
-    syncPreviewData=rows;
-    const withNik=rows.filter(r=>r.nik);
-    const withoutNik=rows.length-withNik.length;
-    let html='<table class="data-table"><thead><tr><th>NIK</th><th>Nama</th><th>Tanggal</th><th>Jam Masuk</th><th>Jam Pulang</th></tr></thead><tbody>';
-    html+=rows.slice(0,50).map(r=>'<tr'+(r.nik?'':' style="background:var(--red-light)"')+'><td>'+(r.nik||'<span style="color:var(--red)">Kosong</span>')+'</td><td>'+r.nama+'</td><td>'+r.tanggal+'</td><td>'+(r.jamMasuk||'—')+'</td><td>'+(r.jamPulang||'—')+'</td></tr>').join('');
-    html+='</tbody></table>';
-    if(rows.length>50) html+='<p style="font-size:.78rem;color:var(--text-muted);margin-top:10px">Menampilkan 50 dari '+rows.length+' baris.</p>';
-    if(withoutNik>0) html='<p style="font-size:.82rem;color:var(--red);margin-bottom:10px"><i class="fas fa-triangle-exclamation"></i> '+withoutNik+' baris tidak memiliki NIK dan akan DILEWATI saat sync (NIK karyawan belum diisi di Profil/Manajemen User).</p>'+html;
-    document.getElementById('sync-preview-table').innerHTML=html;
-    document.getElementById('sync-preview-card').style.display='block';
-    showToast('Preview siap: '+rows.length+' baris ('+withNik.length+' siap disync)','success');
+    const rows = await buildSyncDataset();
+    syncPreviewData = rows;
+    const withNik = rows.filter(r=>r.nik);
+    const withoutNik = rows.length - withNik.length;
+
+    // Warning NIK kosong
+    const warnEl = document.getElementById('sync-warning-no-nik');
+    const warnText = document.getElementById('sync-warning-text');
+    if(withoutNik > 0){
+      warnEl.style.display='block';
+      warnText.textContent = withoutNik+' baris tidak memiliki NIK dan tidak bisa dicentang (NIK karyawan belum diisi di Manajemen User).';
+    } else { warnEl.style.display='none'; }
+
+    // Render tabel dengan checkbox
+    let html = '<div style="overflow-x:auto"><table class="data-table"><thead><tr>';
+    html += '<th style="width:36px"><input type="checkbox" id="sync-chk-all" onchange="syncToggleAll(this)" style="width:16px;height:16px;cursor:pointer"></th>';
+    html += '<th>NIK</th><th>Nama</th><th>Tanggal</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Mesin</th><th>Tipe Absen</th></tr></thead><tbody>';
+
+    html += rows.map((r,i)=>{
+      const canCheck = !!r.nik;
+      const rowStyle = r.nik ? '' : ' style="opacity:.5;background:#fef2f2"';
+      return '<tr'+rowStyle+'>'
+        +'<td><input type="checkbox" class="sync-row-chk" data-idx="'+i+'" '+(canCheck?'checked':'disabled')+' onchange="syncUpdateCount()" style="width:16px;height:16px;cursor:'+(canCheck?'pointer':'not-allowed')+'"></td>'
+        +'<td>'+(r.nik||'<span style="color:var(--red);font-size:.78rem">Kosong</span>')+'</td>'
+        +'<td>'+r.nama+'</td>'
+        +'<td>'+r.tanggal+'</td>'
+        +'<td style="color:var(--green);font-weight:700">'+(r.jamMasuk||'—')+'</td>'
+        +'<td style="color:var(--accent);font-weight:700">'+(r.jamPulang||'—')+'</td>'
+        +'<td style="font-size:.78rem">'+(r.checkInMachine||'—')+'</td>'
+        +'<td style="font-size:.78rem">'+(r.absenceType||'—')+'</td>'
+        +'</tr>';
+    }).join('');
+    html += '</tbody></table></div>';
+
+    document.getElementById('sync-preview-table').innerHTML = html;
+    document.getElementById('sync-preview-card').style.display = 'block';
+    syncUpdateCount();
+    document.getElementById('sync-preview-card').scrollIntoView({behavior:'smooth'});
+    showToast('Preview siap: '+rows.length+' baris ('+withNik.length+' bisa disync)','success');
   }catch(e){ showToast('Gagal menyiapkan preview: '+e.message,'danger'); }
+  if(btn){ btn.disabled=false; btn.innerHTML='<i class="fas fa-eye"></i> Preview & Pilih Data'; }
+}
+
+function syncUpdateCount(){
+  const checked = document.querySelectorAll('.sync-row-chk:checked:not(:disabled)').length;
+  const total = document.querySelectorAll('.sync-row-chk:not(:disabled)').length;
+  document.getElementById('sync-selected-count').textContent = checked+' dari '+total+' baris dipilih';
+  // Update master checkbox state
+  const allChk = document.getElementById('sync-chk-all');
+  if(allChk){ allChk.checked = checked===total && total>0; allChk.indeterminate = checked>0 && checked<total; }
+}
+
+function syncToggleAll(masterChk){
+  document.querySelectorAll('.sync-row-chk:not(:disabled)').forEach(chk=>{ chk.checked=masterChk.checked; });
+  syncUpdateCount();
+}
+
+function syncSelectAll(){
+  document.querySelectorAll('.sync-row-chk:not(:disabled)').forEach(chk=>{ chk.checked=true; });
+  syncUpdateCount();
+}
+
+function syncDeselectAll(){
+  document.querySelectorAll('.sync-row-chk:not(:disabled)').forEach(chk=>{ chk.checked=false; });
+  syncUpdateCount();
 }
 
 async function runManualSync(){
@@ -2247,36 +2310,40 @@ async function runManualSync(){
   const tableName=document.getElementById('sync-table-name').value.trim();
   const nikColumn=document.getElementById('sync-nik-column').value.trim();
   if(!tableName||!nikColumn){showToast('Isi nama tabel dan kolom NIK tujuan','warning');return;}
-  if(!confirm('Sync akan mengirim data absensi ke tabel "'+tableName+'" di SQL Server. Lanjutkan?')) return;
 
-  const btn=document.getElementById('btn-run-sync');
-  btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner spin"></i> Mengirim data...';
+  // Ambil baris yang dicentang
+  const checkedBoxes = document.querySelectorAll('.sync-row-chk:checked:not(:disabled)');
+  if(!checkedBoxes.length){showToast('Pilih minimal satu baris untuk disync','warning');return;}
+  const selectedIndices = Array.from(checkedBoxes).map(chk=>+chk.dataset.idx);
+  const selectedRows = selectedIndices.map(i=>syncPreviewData[i]).filter(r=>r && r.nik);
+
+  if(!selectedRows.length){showToast('Tidak ada baris valid yang dipilih','warning');return;}
+  if(!confirm('Sync '+selectedRows.length+' baris terpilih ke tabel "'+tableName+'"?')) return;
+
+  const btn = document.getElementById('btn-run-sync-preview');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-spinner spin"></i> Mengirim...';}
   try{
-    const rows = syncPreviewData || await buildSyncDataset();
-    const validRows=rows.filter(r=>r.nik && (r.jamMasuk || r.jamPulang));
-    if(!validRows.length){ showToast('Tidak ada baris dengan NIK valid untuk disync','warning'); btn.disabled=false; btn.innerHTML='<i class="fas fa-rotate"></i> Jalankan Sync Sekarang'; return; }
-
-    const payload={ table: tableName, nikColumn: nikColumn, rows: validRows };
-    const res=await fetch(bridgeConfig.bridgeUrl+'/sync', {
+    const payload={ table:tableName, nikColumn:nikColumn, rows:selectedRows };
+    const res=await fetch(bridgeConfig.bridgeUrl+'/sync',{
       method:'POST',
-      headers:{'Content-Type':'application/json', ...(bridgeConfig.token?{'Authorization':'Bearer '+bridgeConfig.token}:{})},
-      body: JSON.stringify(payload)
+      headers:{'Content-Type':'application/json',...(bridgeConfig.token?{'Authorization':'Bearer '+bridgeConfig.token}:{})},
+      body:JSON.stringify(payload)
     });
     if(!res.ok) throw new Error('Bridge merespon HTTP '+res.status);
     const result=await res.json();
-
     await saveSyncLogEntry({
-      tableName, nikColumn, totalRows: validRows.length, skippedRows: rows.length-validRows.length,
-      status:'success', message: result.message||'Sync berhasil', timestamp: new Date().toISOString()
+      tableName, nikColumn, totalRows:selectedRows.length,
+      skippedRows:(syncPreviewData?.length||0)-selectedRows.length,
+      status:'success', message:result.message||'Sync berhasil', timestamp:new Date().toISOString()
     });
-    showToast('Sync berhasil! '+validRows.length+' baris dikirim ke tabel '+tableName,'success');
+    showToast('Sync berhasil! '+selectedRows.length+' baris dikirim ke '+tableName,'success');
     loadSyncLog();
   }catch(e){
-    await saveSyncLogEntry({ tableName, nikColumn, totalRows:0, skippedRows:0, status:'error', message:e.message, timestamp:new Date().toISOString() });
+    await saveSyncLogEntry({tableName,nikColumn,totalRows:0,skippedRows:0,status:'error',message:e.message,timestamp:new Date().toISOString()});
     showToast('Sync gagal: '+e.message,'danger');
     loadSyncLog();
   }
-  btn.disabled=false; btn.innerHTML='<i class="fas fa-rotate"></i> Jalankan Sync Sekarang';
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-rotate"></i> Sync Terpilih';}
 }
 
 async function saveSyncLogEntry(entry){
