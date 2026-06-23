@@ -865,6 +865,38 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
   </div>
 </div>
 
+<!-- MODAL: DELETE ABSENSI -->
+<div class="modal-overlay" id="modal-delete-absen">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-head">
+      <h3 style="color:var(--red)"><i class="fas fa-triangle-exclamation" style="margin-right:8px"></i>Hapus Data Absensi</h3>
+      <button class="modal-close" onclick="closeDeleteAbsen()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.88rem;color:var(--text-muted);margin-bottom:14px">Anda akan menghapus data absensi berikut. Tindakan ini <b>tidak dapat dibatalkan</b>.</p>
+      <div style="background:var(--red-light);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+        <div style="font-weight:700;font-size:.95rem;margin-bottom:6px" id="da-nama">—</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:.82rem">
+          <div><span style="color:var(--text-muted)">Tanggal:</span> <b id="da-tanggal">—</b></div>
+          <div><span style="color:var(--text-muted)">Jam Masuk:</span> <b id="da-masuk" style="color:var(--green)">—</b></div>
+          <div><span style="color:var(--text-muted)">Jam Pulang:</span> <b id="da-pulang" style="color:var(--accent)">—</b></div>
+        </div>
+      </div>
+      <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:.8rem;color:#92400e">
+        <i class="fas fa-info-circle"></i> Data yang dihapus meliputi: <span id="da-detail-hapus">—</span>
+      </div>
+      <div class="fm-group" style="margin-bottom:16px">
+        <label>Alasan Penghapusan <span style="color:var(--red)">*</span></label>
+        <input type="text" id="da-alasan" class="fm-input" placeholder="Misal: Data duplikat, kesalahan input...">
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="closeDeleteAbsen()"><i class="fas fa-times"></i> Batal</button>
+        <button class="btn btn-danger" id="btn-confirm-delete-absen" style="flex:1;justify-content:center" onclick="confirmDeleteAbsen()"><i class="fas fa-trash"></i> Ya, Hapus</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: UBAH ROLE -->
 <div class="modal-overlay" id="modal-role">
   <div class="modal-box" style="max-width:400px">
@@ -1852,11 +1884,19 @@ function renderLaporanTable(data){
       +'<td>'+dur+'</td>'
       +'<td>'+st+'</td>'
       +'<td style="min-width:90px">'+buktiHtml+'</td>'
-      +'<td><button class="btn btn-light" style="padding:6px 10px;font-size:.72rem" onclick="openEditAbsen(this)" '
-        +'data-uid="'+safeUid+'" data-date="'+safeDate+'" data-name="'+r.name.replace(/"/g,'&quot;')+'" '
-        +'data-masuk="'+(r.masuk==='—'?'':r.masuk)+'" data-pulang="'+(r.pulang==='—'?'':r.pulang)+'" '
-        +'data-docid-masuk="'+(r.docIdMasuk||'')+'" data-docid-pulang="'+(r.docIdPulang||'')+'">'
-        +'<i class="fas fa-pen"></i> Edit</button></td>'
+      +'<td style="white-space:nowrap">'
+        +'<button class="btn btn-light" style="padding:6px 10px;font-size:.72rem;margin-right:4px" onclick="openEditAbsen(this)" '
+          +'data-uid="'+safeUid+'" data-date="'+safeDate+'" data-name="'+r.name.replace(/"/g,'&quot;')+'" '
+          +'data-masuk="'+(r.masuk==='—'?'':r.masuk)+'" data-pulang="'+(r.pulang==='—'?'':r.pulang)+'" '
+          +'data-docid-masuk="'+(r.docIdMasuk||'')+'" data-docid-pulang="'+(r.docIdPulang||'')+'">'
+          +'<i class="fas fa-pen"></i> Edit</button>'
+        +'<button class="btn btn-ghost" style="padding:6px 10px;font-size:.72rem;color:var(--red);border-color:var(--red)" '
+          +'onclick="openDeleteAbsen(this)" '
+          +'data-uid="'+safeUid+'" data-date="'+safeDate+'" data-name="'+r.name.replace(/"/g,'&quot;')+'" '
+          +'data-masuk="'+(r.masuk==='—'?'':r.masuk)+'" data-pulang="'+(r.pulang==='—'?'':r.pulang)+'" '
+          +'data-docid-masuk="'+(r.docIdMasuk||'')+'" data-docid-pulang="'+(r.docIdPulang||'')+'">'
+          +'<i class="fas fa-trash"></i></button>'
+        +'</td>'
       +'</tr>';
   }).join('');
   // simpan grouped untuk dipakai modal detail
@@ -3003,6 +3043,89 @@ function riLihatFoto(src){
   document.getElementById('ri-foto-img').src = src;
   document.getElementById('ri-foto-download').href = src;
   modal.style.display = 'flex';
+}
+
+
+// ============================================================
+// DELETE ABSENSI
+// ============================================================
+let deleteAbsenCtx = null;
+
+function openDeleteAbsen(btn){
+  const uid = btn.dataset.uid;
+  const date = btn.dataset.date;
+  const name = btn.dataset.name;
+  const masuk = btn.dataset.masuk || '—';
+  const pulang = btn.dataset.pulang || '—';
+  const docIdMasuk = btn.dataset.docidMasuk || '';
+  const docIdPulang = btn.dataset.docidPulang || '';
+
+  deleteAbsenCtx = { uid, date, name, masuk, pulang, docIdMasuk, docIdPulang };
+
+  // Isi info modal
+  const M=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const d = new Date(date||'');
+  const tglStr = isNaN(d) ? date : d.getDate()+' '+M[d.getMonth()]+' '+d.getFullYear();
+
+  document.getElementById('da-nama').textContent = name || '—';
+  document.getElementById('da-tanggal').textContent = tglStr;
+  document.getElementById('da-masuk').textContent = masuk || '—';
+  document.getElementById('da-pulang').textContent = pulang || '—';
+  document.getElementById('da-alasan').value = '';
+
+  // Keterangan detail apa yang akan dihapus
+  const parts = [];
+  if(docIdMasuk) parts.push('absen masuk ('+masuk+')');
+  if(docIdPulang) parts.push('absen pulang ('+pulang+')');
+  document.getElementById('da-detail-hapus').textContent = parts.length ? parts.join(' & ') : 'seluruh data absensi tanggal ini';
+
+  document.getElementById('modal-delete-absen').classList.add('open');
+  setTimeout(()=>document.getElementById('da-alasan').focus(), 200);
+}
+
+function closeDeleteAbsen(){
+  document.getElementById('modal-delete-absen').classList.remove('open');
+  deleteAbsenCtx = null;
+}
+
+async function confirmDeleteAbsen(){
+  if(!deleteAbsenCtx) return;
+  const alasan = document.getElementById('da-alasan').value.trim();
+  if(!alasan){ showToast('Isi alasan penghapusan terlebih dahulu','warning'); document.getElementById('da-alasan').focus(); return; }
+
+  const btn = document.getElementById('btn-confirm-delete-absen');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menghapus...';
+
+  const { uid, date, name, masuk, pulang, docIdMasuk, docIdPulang } = deleteAbsenCtx;
+
+  try{
+    const batch = firebaseDb.batch();
+
+    if(docIdMasuk) batch.delete(firebaseDb.collection('absensi').doc(docIdMasuk));
+    if(docIdPulang) batch.delete(firebaseDb.collection('absensi').doc(docIdPulang));
+
+    await batch.commit();
+
+    // Catat log penghapusan
+    await firebaseDb.collection('deleteLog').add({
+      type: 'absensi',
+      uid, nama: name, tanggal: date,
+      jamMasuk: masuk || '—', jamPulang: pulang || '—',
+      docIdMasuk: docIdMasuk || '', docIdPulang: docIdPulang || '',
+      alasan, deletedBy: currentAdmin?.name || 'Admin',
+      deletedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    showToast('Data absensi '+name+' ('+date+') berhasil dihapus','success');
+    closeDeleteAbsen();
+    loadLaporan(true);
+  }catch(e){
+    showToast('Gagal menghapus: '+e.message,'danger');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-trash"></i> Ya, Hapus';
 }
 
 // ============================================================
