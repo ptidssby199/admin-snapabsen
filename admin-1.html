@@ -405,6 +405,21 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
                 <option value="nonaktif">Nonaktif</option>
               </select>
             </div>
+            <!-- Konfigurasi Zona Absensi -->
+            <div class="fm-group" style="grid-column:1/-1">
+              <div style="background:#eff6ff;border-radius:8px;padding:12px 14px">
+                <div style="font-weight:700;font-size:.85rem;color:var(--primary);margin-bottom:10px"><i class="fas fa-map-location-dot"></i> Zona Absensi Cabang Ini</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <div class="fm-group" style="margin:0"><label>Latitude</label><input type="text" id="cb-lat" class="fm-input" placeholder="-7.285319"></div>
+                  <div class="fm-group" style="margin:0"><label>Longitude</label><input type="text" id="cb-lng" class="fm-input" placeholder="112.759543"></div>
+                  <div class="fm-group" style="margin:0"><label>Radius (meter)</label><input type="number" id="cb-radius" class="fm-input" placeholder="50" min="3" max="2000"></div>
+                  <div class="fm-group" style="margin:0"><label>CheckIn Machine</label><input type="text" id="cb-checkin-machine" class="fm-input" placeholder="SB1"></div>
+                  <div class="fm-group" style="margin:0"><label>CheckOut Machine</label><input type="text" id="cb-checkout-machine" class="fm-input" placeholder="SB1"></div>
+                  <div class="fm-group" style="margin:0"><label>Absence Type</label><input type="text" id="cb-absence-type" class="fm-input" placeholder="AT-SB1-0004"></div>
+                </div>
+                <div style="font-size:.75rem;color:#64748b;margin-top:8px"><i class="fas fa-info-circle"></i> Koordinat bisa dicopy dari Google Maps. Klik kanan lokasi → "What's here?"</div>
+              </div>
+            </div>
           </div>
           <input type="hidden" id="cb-edit-id">
           <div style="display:flex;gap:10px">
@@ -2835,7 +2850,12 @@ async function cabangLoad(){
 
 function cabangOpenForm(){ document.getElementById('cabang-form-card').style.display='block'; document.getElementById('cabang-form-title').innerHTML='<i class="fas fa-plus" style="margin-right:6px"></i>Tambah Cabang'; document.getElementById('cb-edit-id').value=''; ['cb-nama','cb-kode','cb-alamat','cb-kota','cb-telp'].forEach(id=>document.getElementById(id).value=''); document.getElementById('cb-status').value='aktif'; document.getElementById('cabang-form-card').scrollIntoView({behavior:'smooth'}); }
 
-function cabangCloseForm(){ document.getElementById('cabang-form-card').style.display='none'; }
+function cabangCloseForm(){
+  document.getElementById('cabang-form-card').style.display='none';
+  ['cb-lat','cb-lng','cb-radius','cb-checkin-machine','cb-checkout-machine','cb-absence-type'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+}
 
 function cabangEdit(id){
   const c = cabangData.find(x=>x.id===id); if(!c) return;
@@ -2848,13 +2868,27 @@ function cabangEdit(id){
   document.getElementById('cb-kota').value=c.kota||'';
   document.getElementById('cb-telp').value=c.telp||'';
   document.getElementById('cb-status').value=c.status||'aktif';
+  document.getElementById('cb-lat').value=c.lat||'';
+  document.getElementById('cb-lng').value=c.lng||'';
+  document.getElementById('cb-radius').value=c.radius||'';
+  document.getElementById('cb-checkin-machine').value=c.checkInMachine||'';
+  document.getElementById('cb-checkout-machine').value=c.checkOutMachine||'';
+  document.getElementById('cb-absence-type').value=c.absenceType||'';
   document.getElementById('cabang-form-card').scrollIntoView({behavior:'smooth'});
 }
 
 async function cabangSimpan(){
   const nama=document.getElementById('cb-nama').value.trim();
   if(!nama){ showToast('Nama cabang wajib diisi','warning'); return; }
-  const data={ nama, kode:document.getElementById('cb-kode').value.trim(), alamat:document.getElementById('cb-alamat').value.trim(), kota:document.getElementById('cb-kota').value.trim(), telp:document.getElementById('cb-telp').value.trim(), status:document.getElementById('cb-status').value, updatedAt:firebase.firestore.FieldValue.serverTimestamp() };
+  const cbLat = parseFloat(document.getElementById('cb-lat').value)||null;
+  const cbLng = parseFloat(document.getElementById('cb-lng').value)||null;
+  const cbRadius = parseInt(document.getElementById('cb-radius').value)||50;
+  const data={ nama, kode:document.getElementById('cb-kode').value.trim(), alamat:document.getElementById('cb-alamat').value.trim(), kota:document.getElementById('cb-kota').value.trim(), telp:document.getElementById('cb-telp').value.trim(), status:document.getElementById('cb-status').value,
+    lat:cbLat, lng:cbLng, radius:cbRadius,
+    checkInMachine:document.getElementById('cb-checkin-machine').value.trim()||'SB1',
+    checkOutMachine:document.getElementById('cb-checkout-machine').value.trim()||'SB1',
+    absenceType:document.getElementById('cb-absence-type').value.trim()||'AT-SB1-0004',
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp() };
   const editId = document.getElementById('cb-edit-id').value;
   try{
     if(editId) await firebaseDb.collection('cabang').doc(editId).set(data,{merge:true});
