@@ -1845,14 +1845,14 @@ async function loadLaporan(silent=false){
   if(!silent) showToast('Memuat laporan...','info');
   try{
     const [snapAbsen, snapJadwal, snapShifts] = await Promise.all([
-      firebaseDb.collection('absensi').where('date','>=',start).where('date','<=',end).get(),
+      firebaseDb.collection('absensi').where('date','>=',start).get(),
       firebaseDb.collection('jadwal').where('bulanKey','==',bulanKey).get(),
       allShifts.length ? Promise.resolve(null) : firebaseDb.collection('shifts').get()
     ]);
     if(snapShifts) allShifts=snapShifts.docs.map(d=>({id:d.id,...d.data()}));
     laporanJadwalMap={};
     snapJadwal.docs.forEach(d=>{ const r=d.data(); if(!laporanJadwalMap[r.uid]) laporanJadwalMap[r.uid]={}; laporanJadwalMap[r.uid][r.date]=r; });
-    laporanData=snapAbsen.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
+    laporanData=snapAbsen.docs.filter(d=>d.data().date<=end).map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
       if(a.date!==b.date) return a.date>b.date?1:-1;
       return (a.time||'')>(b.time||'')?1:-1;
     });
@@ -2363,7 +2363,7 @@ async function buildSyncDataset(){
   const end = document.getElementById('sync-sampai').value;
   if(!start || !end){ throw new Error('Pilih rentang tanggal terlebih dahulu'); }
   const [snapAbsen, snapUsers] = await Promise.all([
-    firebaseDb.collection('absensi').where('date','>=',start).where('date','<=',end).get(),
+    firebaseDb.collection('absensi').where('date','>=',start).get(),
     firebaseDb.collection('users').get()
   ]);
   const usersByUid={}; snapUsers.docs.forEach(d=>usersByUid[d.id]={uid:d.id,...d.data()});
@@ -2601,10 +2601,11 @@ async function amCekExisting(){
   const infoText = document.getElementById('am-existing-text');
   if(!uid || !tgl || !firebaseDb){ infoEl.style.display='none'; return; }
   try{
-    const snap = await firebaseDb.collection('absensi').where('uid','==',uid).where('date','==',tgl).get();
-    if(snap.empty){ infoEl.style.display='none'; return; }
+    const snap = await firebaseDb.collection('absensi').where('uid','==',uid).get();
+    const docs = snap.docs.filter(d=>d.data().date===tgl);
+    if(!docs.length){ infoEl.style.display='none'; return; }
     let masuk='', pulang='';
-    snap.docs.forEach(d=>{ const r=d.data(); if(r.type==='masuk') masuk=r.time; if(r.type==='pulang') pulang=r.time; });
+    docs.forEach(d=>{ const r=d.data(); if(r.type==='masuk') masuk=r.time; if(r.type==='pulang') pulang=r.time; });
     infoEl.style.display='block';
     infoText.textContent = 'Sudah ada data absensi pada tanggal ini — Masuk: '+(masuk||'—')+', Pulang: '+(pulang||'—')+'. Menyimpan akan menimpa data yang ada.';
     // Pre-fill jam yang sudah ada
@@ -2648,13 +2649,14 @@ async function amSimpan(){
 
   try{
     // Ambil doc existing
-    const snap = await firebaseDb.collection('absensi').where('uid','==',uid).where('date','==',tgl).get();
-    const docMasuk = snap.docs.find(d=>d.data().type==='masuk');
-    const docPulang = snap.docs.find(d=>d.data().type==='pulang');
+    const snapAll = await firebaseDb.collection('absensi').where('uid','==',uid).get();
+    const snapDocs = snapAll.docs.filter(d=>d.data().date===tgl);
+    const docMasuk = snapDocs.find(d=>d.data().type==='masuk');
+    const docPulang = snapDocs.find(d=>d.data().type==='pulang');
 
     if(ket !== 'hadir'){
       // Untuk izin/sakit/cuti/alpha: simpan 1 dokumen status saja, hapus masuk/pulang jika ada
-      const statusDoc = snap.docs.find(d=>d.data().type===ket);
+      const statusDoc = snapDocs.find(d=>d.data().type===ket);
       if(statusDoc){
         await statusDoc.ref.update({keterangan:ket,catatan:catatan||'',editedByAdmin:true,editedBy:adminName,editedAt:firebase.firestore.FieldValue.serverTimestamp()});
       } else {
@@ -2701,12 +2703,13 @@ async function amLoadRiwayat(){
   const container = document.getElementById('am-riwayat-table');
   container.innerHTML='<div class="empty-state"><i class="fas fa-spinner fa-spin" style="font-size:2rem;display:block;margin-bottom:12px;opacity:.6"></i><p>Memuat...</p></div>';
   try{
-    const snap = await firebaseDb.collection('absensi').where('date','==',tgl).where('editedByAdmin','==',true).get();
+    const snap = await firebaseDb.collection('absensi').where('date','==',tgl).get();
+    // Filter editedByAdmin client-side
     if(snap.empty){ container.innerHTML='<div class="empty-state"><i class="fas fa-inbox"></i><p>Belum ada absensi manual pada tanggal ini</p></div>'; return; }
 
     // Group by uid
     const grouped={};
-    snap.docs.forEach(d=>{
+    snap.docs.filter(d=>d.data().editedByAdmin===true).forEach(d=>{
       const r=d.data();
       if(!grouped[r.uid]) grouped[r.uid]={uid:r.uid,nama:r.userName||'—',masuk:'—',pulang:'—',ket:r.keterangan||'hadir',catatan:r.catatan||'',mesinIn:r.checkInMachine||'—',mesinOut:r.checkOutMachine||'—',tipe:r.absenceType||'—',oleh:r.editedBy||'Admin'};
       if(r.type==='masuk'){ grouped[r.uid].masuk=r.time||'—'; if(r.checkInMachine) grouped[r.uid].mesinIn=r.checkInMachine; if(r.absenceType) grouped[r.uid].tipe=r.absenceType; }
@@ -2820,12 +2823,17 @@ async function riLoad(){
   tableEl.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin" style="font-size:2rem;display:block;margin-bottom:12px"></i><p>Memuat...</p></div>';
 
   try{
+    // Gunakan satu where saja, filter lain di client
     let q = firebaseDb.collection('izin');
     if(uid) q = q.where('uid','==',uid);
-    if(status) q = q.where('status','==',status);
-    const snap = await q.get();
+    else if(status) q = q.where('status','==',status);
+    let snap = await q.get();
+    // Filter tambahan client-side
+    let snapDocs = snap.docs;
+    if(uid && status) snapDocs = snapDocs.filter(d=>d.data().status===status);
+    else if(!uid && !status) snapDocs = snap.docs;
 
-    let data = snap.docs.map(d=>({id:d.id,...d.data()}));
+    let data = snapDocs.map(d=>({id:d.id,...d.data()}));
 
     // Filter bulan
     if(bulan){
@@ -3034,7 +3042,7 @@ async function payrollHitung(){
     const users = usersSnap.docs.map(d=>({uid:d.id,...d.data()})).filter(u=>u.userRole!=='admin');
 
     // Load absensi
-    const absSnap = await firebaseDb.collection('absensi').where('date','>=',start).where('date','<=',end).get();
+    const absSnap = await firebaseDb.collection('absensi').where('date','>=',start).get();
     const absData = absSnap.docs.map(d=>d.data());
 
     // Load setting gaji
@@ -3055,7 +3063,7 @@ async function payrollHitung(){
       const potTelat = +(g.potTelat||0);
       const potAlpha = +(g.potAlpha||0);
 
-      const uAbs = absData.filter(a=>a.uid===u.uid);
+      const uAbs = absData.filter(a=>a.uid===u.uid && a.date<=end);
       const hariHadir = new Set(uAbs.filter(a=>a.type==='masuk').map(a=>a.date)).size;
       const telat = uAbs.filter(a=>a.type==='masuk' && a.keterangan==='terlambat').length;
       const alpha = uAbs.filter(a=>a.keterangan==='alpha').length;
