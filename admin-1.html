@@ -2393,13 +2393,16 @@ async function previewSyncData(){
     // Load synced keys dari syncLog untuk range ini
     const dari = document.getElementById('sync-dari').value;
     const sampai = document.getElementById('sync-sampai').value;
+    // Load semua log sukses, filter periode di client (hindari composite index)
     const logSnap = await firebaseDb.collection('syncLog')
-      .where('status','==','success')
-      .where('dari','>=',dari).get();
+      .where('status','==','success').get();
     const syncedKeys = new Set();
     logSnap.docs.forEach(d=>{
       const r = d.data();
-      if(r.syncedKeys) r.syncedKeys.forEach(k=>syncedKeys.add(k));
+      // Hanya ambil syncedKeys yang periodenya overlap dengan range yang dipilih
+      if(r.syncedKeys && r.dari && r.sampai && r.dari <= sampai && r.sampai >= dari){
+        r.syncedKeys.forEach(k=>syncedKeys.add(k));
+      }
     });
 
     const hideSync = document.getElementById('sync-hide-synced')?.checked;
