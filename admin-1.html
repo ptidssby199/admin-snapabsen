@@ -763,10 +763,18 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
             <i class="fas fa-circle-info" style="margin-right:4px"></i> Data IDS-Abs (Firebase) akan dicocokkan ke baris tabel SQL Server berdasarkan kolom NIK di atas. Pastikan NIK di IDS-Abs (Profil karyawan) sama persis dengan NIK/ID Card di SQL Server.
           </div>
           <div class="fm-row2" style="margin-bottom:14px">
-            <div class="fm-group"><label>Bulan</label>
-              <select id="sync-bulan" class="fm-input"><option value="1">Januari</option><option value="2">Februari</option><option value="3">Maret</option><option value="4">April</option><option value="5">Mei</option><option value="6">Juni</option><option value="7">Juli</option><option value="8">Agustus</option><option value="9">September</option><option value="10">Oktober</option><option value="11">November</option><option value="12">Desember</option></select>
-            </div>
-            <div class="fm-group"><label>Tahun</label><input type="number" id="sync-tahun" class="fm-input" value="2026" min="2020" max="2099"></div>
+            <div class="fm-group"><label>Dari Tanggal</label><input type="date" id="sync-dari" class="fm-input"></div>
+            <div class="fm-group"><label>Sampai Tanggal</label><input type="date" id="sync-sampai" class="fm-input"></div>
+          </div>
+          <div style="margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <label style="font-size:.82rem;color:var(--text-muted)">Pilih cepat:</label>
+            <button class="btn btn-ghost" style="padding:5px 10px;font-size:.75rem" onclick="syncSetRange('hari')"><i class="fas fa-calendar-day"></i> Hari Ini</button>
+            <button class="btn btn-ghost" style="padding:5px 10px;font-size:.75rem" onclick="syncSetRange('minggu')"><i class="fas fa-calendar-week"></i> Minggu Ini</button>
+            <button class="btn btn-ghost" style="padding:5px 10px;font-size:.75rem" onclick="syncSetRange('bulan')"><i class="fas fa-calendar"></i> Bulan Ini</button>
+            <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;margin-left:8px">
+              <input type="checkbox" id="sync-hide-synced" checked onchange="syncFilterChecklist()" style="width:15px;height:15px;cursor:pointer">
+              <span>Sembunyikan yang sudah disync</span>
+            </label>
           </div>
           <div style="display:flex;gap:10px">
             <button class="btn btn-blue" onclick="previewSyncData()"><i class="fas fa-eye"></i> Preview & Pilih Data</button>
@@ -2279,7 +2287,32 @@ let bridgeConfig=null, syncPreviewData=null;
 function initSyncPage(){
   loadBridgeConfigFromFirestore();
   loadSyncLog();
+  syncSetRange('bulan');
 }
+
+function syncSetRange(mode){
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const fmt = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  let dari, sampai;
+  if(mode==='hari'){
+    dari = sampai = fmt(now);
+  } else if(mode==='minggu'){
+    const day = now.getDay();
+    const mon = new Date(now); mon.setDate(now.getDate() - (day===0?6:day-1));
+    const sun = new Date(mon); sun.setDate(mon.getDate()+6);
+    dari = fmt(mon); sampai = fmt(sun);
+  } else {
+    dari = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-01';
+    const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
+    sampai = fmt(last);
+  }
+  const dEl = document.getElementById('sync-dari');
+  const sEl = document.getElementById('sync-sampai');
+  if(dEl) dEl.value = dari;
+  if(sEl) sEl.value = sampai;
+}
+
 async function loadBridgeConfigFromFirestore(){
   const cached=localStorage.getItem('sql_sync_config');
   if(cached){ try{ bridgeConfig=JSON.parse(cached); }catch(e){} }
@@ -2326,9 +2359,9 @@ async function testBridgeConnection(){
 }
 
 async function buildSyncDataset(){
-  const bulan=parseInt(document.getElementById('sync-bulan').value), tahun=parseInt(document.getElementById('sync-tahun').value);
-  const start=`${tahun}-${String(bulan).padStart(2,'0')}-01`;
-  const end=`${tahun}-${String(bulan).padStart(2,'0')}-31`;
+  const start = document.getElementById('sync-dari').value;
+  const end = document.getElementById('sync-sampai').value;
+  if(!start || !end){ throw new Error('Pilih rentang tanggal terlebih dahulu'); }
   const [snapAbsen, snapUsers] = await Promise.all([
     firebaseDb.collection('absensi').where('date','>=',start).where('date','<=',end).get(),
     firebaseDb.collection('users').get()
@@ -2356,27 +2389,56 @@ async function previewSyncData(){
   try{
     const rows = await buildSyncDataset();
     syncPreviewData = rows;
+
+    // Load synced keys dari syncLog untuk range ini
+    const dari = document.getElementById('sync-dari').value;
+    const sampai = document.getElementById('sync-sampai').value;
+    const logSnap = await firebaseDb.collection('syncLog')
+      .where('status','==','success')
+      .where('dari','>=',dari).get();
+    const syncedKeys = new Set();
+    logSnap.docs.forEach(d=>{
+      const r = d.data();
+      if(r.syncedKeys) r.syncedKeys.forEach(k=>syncedKeys.add(k));
+    });
+
+    const hideSync = document.getElementById('sync-hide-synced')?.checked;
     const withNik = rows.filter(r=>r.nik);
     const withoutNik = rows.length - withNik.length;
 
     // Warning NIK kosong
     const warnEl = document.getElementById('sync-warning-no-nik');
-    const warnText = document.getElementById('sync-warning-text');
     if(withoutNik > 0){
       warnEl.style.display='block';
-      warnText.textContent = withoutNik+' baris tidak memiliki NIK dan tidak bisa dicentang (NIK karyawan belum diisi di Manajemen User).';
+      document.getElementById('sync-warning-text').textContent = withoutNik+' baris tidak memiliki NIK dan tidak bisa dicentang.';
     } else { warnEl.style.display='none'; }
 
-    // Render tabel dengan checkbox
+    // Filter rows
+    const displayRows = hideSync ? rows.filter(r=>!syncedKeys.has(r.nik+'|'+r.tanggal)) : rows;
+    const hiddenCount = rows.length - displayRows.length;
+
+    if(!displayRows.length){
+      document.getElementById('sync-preview-table').innerHTML =
+        '<div class="empty-state"><i class="fas fa-check-circle" style="color:var(--green);font-size:2rem;display:block;margin-bottom:10px"></i>'
+        +'<p>Semua data pada rentang ini sudah disync'+(hiddenCount?'  ('+hiddenCount+' baris disembunyikan)':'')+'</p></div>';
+      document.getElementById('sync-preview-card').style.display='block';
+      if(btn){ btn.disabled=false; btn.innerHTML='<i class="fas fa-eye"></i> Preview & Pilih Data'; }
+      return;
+    }
+
     let html = '<div style="overflow-x:auto"><table class="data-table"><thead><tr>';
     html += '<th style="width:36px"><input type="checkbox" id="sync-chk-all" onchange="syncToggleAll(this)" style="width:16px;height:16px;cursor:pointer"></th>';
-    html += '<th>NIK</th><th>Nama</th><th>Tanggal</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Mesin In</th><th>Mesin Out</th><th>Tipe Absen</th></tr></thead><tbody>';
+    html += '<th>NIK</th><th>Nama</th><th>Tanggal</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Mesin In</th><th>Mesin Out</th><th>Tipe Absen</th><th>Status</th></tr></thead><tbody>';
 
-    html += rows.map((r,i)=>{
+    html += displayRows.map((r,i)=>{
       const canCheck = !!r.nik;
-      const rowStyle = r.nik ? '' : ' style="opacity:.5;background:#fef2f2"';
+      const isSynced = syncedKeys.has(r.nik+'|'+r.tanggal);
+      const rowStyle = isSynced ? ' style="opacity:.5;background:#f0fdf4"' : (!r.nik ? ' style="opacity:.5;background:#fef2f2"' : '');
+      const statusBadge = isSynced
+        ? '<span class="badge badge-green" style="font-size:.7rem"><i class="fas fa-check"></i> Sudah Sync</span>'
+        : '<span class="badge badge-gray" style="font-size:.7rem">Belum Sync</span>';
       return '<tr'+rowStyle+'>'
-        +'<td><input type="checkbox" class="sync-row-chk" data-idx="'+i+'" '+(canCheck?'checked':'disabled')+' onchange="syncUpdateCount()" style="width:16px;height:16px;cursor:'+(canCheck?'pointer':'not-allowed')+'"></td>'
+        +'<td><input type="checkbox" class="sync-row-chk" data-idx="'+i+'" '+(canCheck&&!isSynced?'checked':'disabled')+' onchange="syncUpdateCount()" style="width:16px;height:16px;cursor:'+(canCheck&&!isSynced?'pointer':'not-allowed')+'"></td>'
         +'<td>'+(r.nik||'<span style="color:var(--red);font-size:.78rem">Kosong</span>')+'</td>'
         +'<td>'+r.nama+'</td>'
         +'<td>'+r.tanggal+'</td>'
@@ -2385,18 +2447,23 @@ async function previewSyncData(){
         +'<td style="font-size:.78rem">'+(r.checkInMachine||'—')+'</td>'
         +'<td style="font-size:.78rem">'+(r.checkOutMachine||'—')+'</td>'
         +'<td style="font-size:.78rem">'+(r.absenceType||'—')+'</td>'
+        +'<td>'+statusBadge+'</td>'
         +'</tr>';
     }).join('');
     html += '</tbody></table></div>';
+    if(hiddenCount) html += '<p style="font-size:.78rem;color:var(--text-muted);margin-top:8px"><i class="fas fa-eye-slash"></i> '+hiddenCount+' baris yang sudah disync disembunyikan.</p>';
 
     document.getElementById('sync-preview-table').innerHTML = html;
     document.getElementById('sync-preview-card').style.display = 'block';
     syncUpdateCount();
     document.getElementById('sync-preview-card').scrollIntoView({behavior:'smooth'});
-    showToast('Preview siap: '+rows.length+' baris ('+withNik.length+' bisa disync)','success');
-  }catch(e){ showToast('Gagal menyiapkan preview: '+e.message,'danger'); }
+    showToast('Preview siap: '+displayRows.length+' baris ditampilkan','success');
+  }catch(e){ showToast('Gagal: '+e.message,'danger'); }
   if(btn){ btn.disabled=false; btn.innerHTML='<i class="fas fa-eye"></i> Preview & Pilih Data'; }
 }
+
+function syncFilterChecklist(){ previewSyncData(); }
+
 
 function syncUpdateCount(){
   const checked = document.querySelectorAll('.sync-row-chk:checked:not(:disabled)').length;
@@ -2448,10 +2515,15 @@ async function runManualSync(){
     });
     if(!res.ok) throw new Error('Bridge merespon HTTP '+res.status);
     const result=await res.json();
+    const syncedKeys = selectedRows.map(r=>r.nik+'|'+r.tanggal);
+    const dari = document.getElementById('sync-dari').value;
+    const sampai = document.getElementById('sync-sampai').value;
     await saveSyncLogEntry({
       tableName, nikColumn, totalRows:selectedRows.length,
       skippedRows:(syncPreviewData?.length||0)-selectedRows.length,
-      status:'success', message:result.message||'Sync berhasil', timestamp:new Date().toISOString()
+      status:'success', message:result.message||'Sync berhasil',
+      timestamp:new Date().toISOString(),
+      dari, sampai, syncedKeys
     });
     showToast('Sync berhasil! '+selectedRows.length+' baris dikirim ke '+tableName,'success');
     loadSyncLog();
@@ -2473,13 +2545,14 @@ async function loadSyncLog(){
   try{
     const snap=await firebaseDb.collection('syncLog').orderBy('timestamp','desc').limit(20).get();
     if(snap.empty){ c.innerHTML='<div class="empty-state"><i class="fas fa-inbox"></i><p>Belum ada riwayat sync</p></div>'; return; }
-    c.innerHTML='<table class="data-table"><thead><tr><th>Waktu</th><th>Tabel</th><th>Jumlah Baris</th><th>Status</th><th>Oleh</th><th>Keterangan</th></tr></thead><tbody>'+
+    c.innerHTML='<table class="data-table"><thead><tr><th>Waktu</th><th>Periode</th><th>Tabel</th><th>Jumlah Baris</th><th>Status</th><th>Oleh</th><th>Keterangan</th></tr></thead><tbody>'+
       snap.docs.map(d=>{
         const r=d.data();
         const t=new Date(r.timestamp);
         const waktu=isNaN(t)?r.timestamp:t.toLocaleString('id-ID');
         const statusBadge=r.status==='success'?'<span class="badge badge-green">Berhasil</span>':'<span class="badge badge-red">Gagal</span>';
-        return '<tr><td>'+waktu+'</td><td>'+(r.tableName||'—')+'</td><td>'+(r.totalRows||0)+' baris'+(r.skippedRows?' ('+r.skippedRows+' dilewati)':'')+'</td><td>'+statusBadge+'</td><td>'+(r.by||'—')+'</td><td style="font-size:.76rem;color:var(--text-muted)">'+(r.message||'—')+'</td></tr>';
+        const periodeStr = r.dari&&r.sampai ? r.dari+(r.dari!==r.sampai?' s/d '+r.sampai:'') : (r.tableName||'—');
+        return '<tr><td>'+waktu+'</td><td style="font-size:.78rem">'+(r.dari||'')+(r.dari!==r.sampai&&r.sampai?' s/d '+r.sampai:'')+'</td><td>'+(r.tableName||'—')+'</td><td>'+(r.totalRows||0)+' baris'+(r.skippedRows?' ('+r.skippedRows+' lewat)':'')+'</td><td>'+statusBadge+'</td><td>'+(r.by||'—')+'</td><td style="font-size:.76rem;color:var(--text-muted)">'+(r.message||'—')+'</td></tr>';
       }).join('')+'</tbody></table>';
   }catch(e){ c.innerHTML='<div class="empty-state"><i class="fas fa-triangle-exclamation"></i><p>Gagal memuat log: '+e.message+'</p></div>'; }
 }
