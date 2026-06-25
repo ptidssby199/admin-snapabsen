@@ -2017,13 +2017,24 @@ function exportExcel(){
   const grouped={};
   laporanData.forEach(r=>{
     const key=(r.uid||'x')+'|'+(r.date||'');
-    if(!grouped[key]) grouped[key]={uid:r.uid,nama:r.userName||'—',tanggal:r.date,masuk:'—',pulang:'—',lat:r.lat,lng:r.lng,photoMasuk:'',photoPulang:''};
-    if(r.type==='masuk'){ grouped[key].masuk=r.time; grouped[key].lat=r.lat; grouped[key].lng=r.lng; const f=r.photoURL||r.photoBase64||''; if(f) grouped[key].photoMasuk=f; }
-    if(r.type==='pulang'){ grouped[key].pulang=r.time; const fp=r.photoURL||r.photoBase64||''; if(fp) grouped[key].photoPulang=fp; }
+    if(!grouped[key]) grouped[key]={uid:r.uid,nama:r.userName||'—',tanggal:r.date,masuk:'—',pulang:'—',
+      latMasuk:null,lngMasuk:null,latPulang:null,lngPulang:null,
+      gpsMasuk:0,gpsPulang:0,gpsWarnMasuk:[],gpsWarnPulang:[],cabangNama:r.cabangNama||''};
+    if(r.type==='masuk'){
+      grouped[key].masuk=r.time||'—';
+      grouped[key].latMasuk=r.lat||null; grouped[key].lngMasuk=r.lng||null;
+      grouped[key].gpsMasuk=r.fakeGpsScore||0; grouped[key].gpsWarnMasuk=r.gpsWarnings||[];
+      if(r.cabangNama) grouped[key].cabangNama=r.cabangNama;
+    }
+    if(r.type==='pulang'){
+      grouped[key].pulang=r.time||'—';
+      grouped[key].latPulang=r.lat||null; grouped[key].lngPulang=r.lng||null;
+      grouped[key].gpsPulang=r.fakeGpsScore||0; grouped[key].gpsWarnPulang=r.gpsWarnings||[];
+    }
   });
   const rows=Object.values(grouped).sort((a,b)=>a.tanggal>b.tanggal?1:-1);
   const M=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
-  const hdr=['No','Nama Karyawan','Tanggal','Shift','Batas Masuk','Jam Masuk','Terlambat','Jam Pulang','Durasi','Status','Latitude','Longitude','Foto Masuk (URL/Base64)','Foto Pulang (URL/Base64)'];
+  const hdr=['No','Nama Karyawan','Kantor/Cabang','Tanggal','Shift','Batas Masuk','Jam Masuk','Terlambat','Jam Pulang','Durasi','Status','Link Maps Masuk','GPS Valid Masuk','Link Maps Pulang','GPS Valid Pulang'];
   const esc=(s)=>String(s===undefined||s===null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   let bodyRows='';
   rows.forEach((r,i)=>{
@@ -2033,21 +2044,32 @@ function exportExcel(){
     const shiftNamaExp=t2?t2.shiftNama:'—', batasExp=t2?t2.batas:'—', telatExp=t2?(t2.telat?'+'+t2.display:'Tepat Waktu'):'—';
     const st=r.masuk==='—'?'Tidak Hadir':r.pulang==='—'?'Belum Pulang':'Hadir';
     const bg=i%2===0?'#ffffff':'#f8fafc';
+    // Link Google Maps
+    const mapsM = r.latMasuk&&r.lngMasuk ? 'https://maps.google.com/?q='+r.latMasuk+','+r.lngMasuk : '';
+    const mapsP = r.latPulang&&r.lngPulang ? 'https://maps.google.com/?q='+r.latPulang+','+r.lngPulang : '';
+    // GPS Score: 0=valid, 1=curiga, 2+=fake
+    const gpsScoreMasuk = r.gpsMasuk||0;
+    const gpsScorePulang = r.gpsPulang||0;
+    const gpsLabelM = gpsScoreMasuk===0?'✓ Valid':gpsScoreMasuk===1?'⚠ Curiga':'✗ Fake GPS';
+    const gpsLabelP = r.latPulang ? (gpsScorePulang===0?'✓ Valid':gpsScorePulang===1?'⚠ Curiga':'✗ Fake GPS') : '—';
+    const gpsBgM = gpsScoreMasuk===0?'#f0fdf4':gpsScoreMasuk===1?'#fffbeb':'#fef2f2';
+    const gpsBgP = !r.latPulang?'':gpsScorePulang===0?'#f0fdf4':gpsScorePulang===1?'#fffbeb':'#fef2f2';
     bodyRows+=`<tr style="background:${bg}">
       <td style="text-align:center;border:1px solid #d1d5db">${i+1}</td>
       <td style="border:1px solid #d1d5db">${esc(r.nama)}</td>
+      <td style="border:1px solid #d1d5db;font-size:10px">${esc(r.cabangNama||'—')}</td>
       <td style="border:1px solid #d1d5db" x:fmt="@">${esc(tgl)}</td>
       <td style="border:1px solid #d1d5db">${esc(shiftNamaExp)}</td>
       <td style="text-align:center;border:1px solid #d1d5db" x:fmt="@">${esc(batasExp)}</td>
-      <td style="text-align:center;border:1px solid #d1d5db" x:fmt="@">${esc(r.masuk)}</td>
-      <td style="text-align:center;border:1px solid #d1d5db">${esc(telatExp)}</td>
+      <td style="text-align:center;border:1px solid #d1d5db;${t2&&t2.telat?'color:#dc2626;font-weight:700;':''}" x:fmt="@">${esc(r.masuk)}</td>
+      <td style="text-align:center;border:1px solid #d1d5db;${t2&&t2.telat?'color:#dc2626;font-weight:700;':''}">${esc(telatExp)}</td>
       <td style="text-align:center;border:1px solid #d1d5db" x:fmt="@">${esc(r.pulang)}</td>
       <td style="text-align:center;border:1px solid #d1d5db">${esc(dur)}</td>
       <td style="text-align:center;border:1px solid #d1d5db">${esc(st)}</td>
-      <td style="text-align:center;border:1px solid #d1d5db">${esc(r.lat||'')}</td>
-      <td style="text-align:center;border:1px solid #d1d5db">${esc(r.lng||'')}</td>
-      <td style="border:1px solid #d1d5db;font-size:9px">${esc(r.photoMasuk||'')}</td>
-      <td style="border:1px solid #d1d5db;font-size:9px">${esc(r.photoPulang||'')}</td>
+      <td style="border:1px solid #d1d5db;font-size:9px;color:#2563eb">${mapsM?`<a href="${mapsM}">${mapsM}</a>`:'—'}</td>
+      <td style="text-align:center;border:1px solid #d1d5db;background:${gpsBgM};font-weight:700;font-size:10px">${gpsLabelM}</td>
+      <td style="border:1px solid #d1d5db;font-size:9px;color:#2563eb">${mapsP?`<a href="${mapsP}">${mapsP}</a>`:'—'}</td>
+      <td style="text-align:center;border:1px solid #d1d5db;background:${gpsBgP};font-weight:700;font-size:10px">${gpsLabelP}</td>
     </tr>`;
   });
   const totalKaryawan=new Set(rows.map(r=>r.uid)).size;
