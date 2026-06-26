@@ -48,7 +48,7 @@ input,select,textarea{font-family:inherit}
 #app{display:none;min-height:100vh}
 .sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sidebar-w);background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:100}
 .sidebar-brand{padding:22px 20px;border-bottom:1px solid var(--border)}
-.sidebar-brand .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:1.3rem}
+.sidebar-brand .logo{font-family:'Syne',sans-serif;background:#960b24;color:#fff;font-weight:800;font-size:1.3rem}
 .sidebar-brand .logo span{color:var(--accent)}
 .sidebar-brand .tag{font-size:.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-top:2px}
 .sidebar-nav{flex:1;overflow-y:auto;padding:14px 12px}
@@ -286,7 +286,7 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
           <div class="sidebar-user-role">Administrator</div>
         </div>
       </div>
-      <button class="btn-logout" onclick="doLogout()"><i class="fas fa-arrow-right-from-bracket"></i> Keluar</button>
+      <button class="btn-ut" onclick="dout()"><i class="fas fa-arrow-right-from-bracket"></i> Keluar</button>
     </div>
   </aside>
 
@@ -1190,7 +1190,7 @@ async function doLogin(){
     btn.disabled=false; btn.innerHTML='<i class="fas fa-arrow-right-to-bracket"></i> Masuk ke Panel Admin';
   }
 }
-function doLogout(){
+function dout(){
   if(firebaseAuth) firebaseAuth.signOut();
   currentAdmin=null;
 }
