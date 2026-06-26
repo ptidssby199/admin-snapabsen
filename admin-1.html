@@ -31,8 +31,7 @@ input,select,textarea{font-family:inherit}
 /* ===== LOGIN PAGE ===== */
 #page-login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--primary) 0%,#0b2e8a 100%);padding:24px}
 .login-box{background:#fff;border-radius:20px;padding:40px;width:100%;max-width:420px;box-shadow:var(--shadow-lg)}
-.login-logo{font-family:'Syne',sans-serif;color:#fff;display:inline-block;background:#960b24;font-weight:800;font-size:1.9rem;text-align:center;margin-bottom:4px}
-.login-logo{font-family:'Syne',sans-serif;color:#fff;display:inline-block;background:#960b24;font-weight:800;font-size:1.9rem;text-align:center;margin-bottom:4px}
+.login-logo{display:flex;justify-content:center;align-items:center;width:170px;height:38px;margin:0 auto 8px;background:#960b24;color:#fff;border-radius:0;font-family:'Syne',sans-serif;font-size:2rem;font-weight:800;letter-spacing:-1px;line-height:1}
 .login-sub{text-align:center;color:var(--text-muted);font-size:.85rem;margin-bottom:28px}
 .login-badge{display:block;text-align:center;margin:0 auto 20px;background:#ede9fe;color:#6d28d9;font-weight:700;font-size:.72rem;letter-spacing:.5px;text-transform:uppercase;padding:6px 14px;border-radius:20px;width:fit-content}
 .form-group{margin-bottom:16px}
@@ -236,7 +235,7 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
 <!-- ============ LOGIN PAGE ============ -->
 <div id="page-login">
   <div class="login-box">
-    <div class="login-logo">I<span>PresS</span></div>
+    <div class="login-logo"><span>IPresS</span></div>
     <div class="login-sub">Panel Kontrol Admin</div>
     <span class="login-badge"><i class="fas fa-shield-halved"></i>&nbsp; Akses Admin Only</span>
     <div class="login-error" id="login-error"></div>
