@@ -2363,7 +2363,7 @@ async function buildSyncDataset(){
   const end = document.getElementById('sync-sampai').value;
   if(!start || !end){ throw new Error('Pilih rentang tanggal terlebih dahulu'); }
   const [snapAbsen, snapUsers] = await Promise.all([
-    firebaseDb.collection('absensi').where('date','>=',start).get(),
+    firebaseDb.collection('absensi').where('date','>=',start).where('date','<=',end).get(),
     firebaseDb.collection('users').get()
   ]);
   const usersByUid={}; snapUsers.docs.forEach(d=>usersByUid[d.id]={uid:d.id,...d.data()});
