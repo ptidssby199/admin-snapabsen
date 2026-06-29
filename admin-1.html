@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IDS-Abs Admin — Panel Kontrol</title>
-<meta name="description" content="Panel admin desktop IDS-Abs — kelola user, jadwal, laporan, dan sinkronisasi SQL Server">
+<title>IPresS Admin — Panel Kontrol</title>
+<meta name="description" content="Panel admin desktop IPresS — kelola user, jadwal, laporan, dan sinkronisasi SQL Server">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
@@ -236,7 +236,7 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
 <!-- ============ LOGIN PAGE ============ -->
 <div id="page-login">
   <div class="login-box">
-    <div class="login-logo">Snap<span>Absen</span></div>
+    <div class="login-logo"><span>IPresS</span></div>
     <div class="login-sub">Panel Kontrol Admin</div>
     <span class="login-badge"><i class="fas fa-shield-halved"></i>&nbsp; Akses Admin Only</span>
     <div class="login-error" id="login-error"></div>
@@ -249,7 +249,7 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
       <input type="password" id="login-password" placeholder="Masukkan password" autocomplete="current-password">
     </div>
     <button class="btn-primary" id="btn-login" onclick="doLogin()"><i class="fas fa-arrow-right-to-bracket"></i> Masuk ke Panel Admin</button>
-    <div class="login-denied" id="login-denied"><i class="fas fa-circle-info"></i> Akun ini terdaftar tapi bukan role <b>Admin</b>. Panel ini hanya untuk Admin. Gunakan IDS-Abs versi mobile untuk role Manager/Karyawan.</div>
+    <div class="login-denied" id="login-denied"><i class="fas fa-circle-info"></i> Akun ini terdaftar tapi bukan role <b>Admin</b>. Panel ini hanya untuk Admin. Gunakan IPresS versi mobile untuk role Manager/Karyawan.</div>
   </div>
 </div>
 
@@ -760,7 +760,7 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
             <div class="fm-group"><label>Kolom Kunci NIK di Tabel SQL</label><input type="text" id="sync-nik-column" class="fm-input" placeholder="contoh: NIK atau ID_CARD"></div>
           </div>
           <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:16px;background:var(--primary-light);padding:10px 12px;border-radius:8px">
-            <i class="fas fa-circle-info" style="margin-right:4px"></i> Data IDS-Abs (Firebase) akan dicocokkan ke baris tabel SQL Server berdasarkan kolom NIK di atas. Pastikan NIK di IDS-Abs (Profil karyawan) sama persis dengan NIK/ID Card di SQL Server.
+            <i class="fas fa-circle-info" style="margin-right:4px"></i> Data IPresS (Firebase) akan dicocokkan ke baris tabel SQL Server berdasarkan kolom NIK di atas. Pastikan NIK di IPresS (Profil karyawan) sama persis dengan NIK/ID Card di SQL Server.
           </div>
           <div class="fm-row2" style="margin-bottom:14px">
             <div class="fm-group"><label>Dari Tanggal</label><input type="date" id="sync-dari" class="fm-input"></div>
@@ -831,7 +831,7 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
       <div class="page-view" id="page-firebase">
         <div class="card" style="max-width:560px">
           <h3 style="margin-bottom:6px;font-size:1.05rem"><i class="fas fa-fire" style="color:var(--accent);margin-right:6px"></i>Konfigurasi Firebase</h3>
-          <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:14px">Config ini dipakai bersama oleh IDS-Abs mobile dan panel admin ini (disimpan di browser yang sama).</p>
+          <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:14px">Config ini dipakai bersama oleh IPresS mobile dan panel admin ini (disimpan di browser yang sama).</p>
           <div class="badge badge-gray" id="fb-status-badge" style="margin-bottom:16px"><i class="fas fa-circle" style="font-size:.5rem"></i>&nbsp; Memeriksa...</div>
 
           <!-- Load dari file JSON -->
@@ -1176,7 +1176,7 @@ async function doLogin(){
   const denyEl=document.getElementById('login-denied');
   errEl.style.display='none'; denyEl.style.display='none';
   if(!email||!pass){ errEl.textContent='Email dan password wajib diisi'; errEl.style.display='block'; return; }
-  if(!firebaseAuth){ errEl.textContent='Firebase belum terhubung. Cek halaman Firebase Config di IDS-Abs mobile terlebih dahulu.'; errEl.style.display='block'; return; }
+  if(!firebaseAuth){ errEl.textContent='Firebase belum terhubung. Cek halaman Firebase Config di IPresS mobile terlebih dahulu.'; errEl.style.display='block'; return; }
   const btn=document.getElementById('btn-login');
   btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner spin"></i> Memeriksa...';
   try{
@@ -3430,9 +3430,9 @@ function spPreviewTER(){
   const fc=localStorage.getItem('firebase_config');
   if(fc){
     try{ firebaseConfig=JSON.parse(fc); initFirebase(firebaseConfig); }
-    catch(e){ document.getElementById('login-error').textContent='Config Firebase tersimpan rusak. Buka IDS-Abs mobile dan cek ulang Firebase Config.'; document.getElementById('login-error').style.display='block'; }
+    catch(e){ document.getElementById('login-error').textContent='Config Firebase tersimpan rusak. Buka IPresS mobile dan cek ulang Firebase Config.'; document.getElementById('login-error').style.display='block'; }
   } else {
-    document.getElementById('login-error').textContent='Belum ada konfigurasi Firebase. Buka IDS-Abs versi mobile, login sebagai Admin, lalu atur Firebase Config terlebih dahulu — admin.html akan otomatis memakai config yang sama.';
+    document.getElementById('login-error').textContent='Belum ada konfigurasi Firebase. Buka IPresS versi mobile, login sebagai Admin, lalu atur Firebase Config terlebih dahulu — admin.html akan otomatis memakai config yang sama.';
     document.getElementById('login-error').style.display='block';
   }
 })();
