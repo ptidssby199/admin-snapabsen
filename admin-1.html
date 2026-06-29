@@ -2366,17 +2366,38 @@ async function buildSyncDataset(){
     firebaseDb.collection('users').get()
   ]);
   const usersByUid={}; snapUsers.docs.forEach(d=>usersByUid[d.id]={uid:d.id,...d.data()});
+  const NON_HADIR = ['izin','sakit','cuti','alpha'];
   const grouped={};
   snapAbsen.docs.forEach(d=>{
     const r=d.data();
     const key=(r.uid||'x')+'|'+(r.date||'');
     if(!grouped[key]){
       const u=usersByUid[r.uid]||{};
-      grouped[key]={ nik:u.nik||'', nama:u.name||r.userName||'—', tanggal:r.date, jamMasuk:'', jamPulang:'',
-        checkInMachine: r.checkInMachine||'SB1', checkOutMachine: r.checkOutMachine||'SB1', absenceType: r.absenceType||'AT-SB1-0004' };
+      grouped[key]={ nik:u.nik||'', nama:u.name||r.userName||'—', tanggal:r.date,
+        jamMasuk:null, jamPulang:null,
+        checkInMachine:null, checkOutMachine:null,
+        absenceType: r.absenceType||'AT-SB1-0004',
+        keterangan:'hadir' };
     }
-    if(r.type==='masuk'){ grouped[key].jamMasuk=r.time||''; if(r.checkInMachine) grouped[key].checkInMachine=r.checkInMachine; if(r.absenceType) grouped[key].absenceType=r.absenceType; }
-    if(r.type==='pulang'){ grouped[key].jamPulang=r.time||''; if(r.checkOutMachine) grouped[key].checkOutMachine=r.checkOutMachine; }
+    if(r.type==='masuk'){
+      grouped[key].jamMasuk=r.time||'';
+      if(r.checkInMachine) grouped[key].checkInMachine=r.checkInMachine;
+      if(r.absenceType) grouped[key].absenceType=r.absenceType;
+      grouped[key].keterangan='hadir';
+    }
+    if(r.type==='pulang'){
+      grouped[key].jamPulang=r.time||'';
+      if(r.checkOutMachine) grouped[key].checkOutMachine=r.checkOutMachine;
+    }
+    if(NON_HADIR.includes(r.type)){
+      // Izin/sakit/cuti/alpha: hanya isi absenceType, jam & mesin tetap null
+      grouped[key].keterangan=r.type;
+      grouped[key].jamMasuk=null;
+      grouped[key].jamPulang=null;
+      grouped[key].checkInMachine=null;
+      grouped[key].checkOutMachine=null;
+      if(r.absenceType) grouped[key].absenceType=r.absenceType;
+    }
   });
   return Object.values(grouped).sort((a,b)=>a.tanggal>b.tanggal?1:-1);
 }
@@ -2430,8 +2451,10 @@ async function previewSyncData(){
 
     let html = '<div style="overflow-x:auto"><table class="data-table"><thead><tr>';
     html += '<th style="width:36px"><input type="checkbox" id="sync-chk-all" onchange="syncToggleAll(this)" style="width:16px;height:16px;cursor:pointer"></th>';
-    html += '<th>NIK</th><th>Nama</th><th>Tanggal</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Mesin In</th><th>Mesin Out</th><th>Tipe Absen</th><th>Status</th></tr></thead><tbody>';
+    html += '<th>NIK</th><th>Nama</th><th>Tanggal</th><th>Keterangan</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Mesin In</th><th>Mesin Out</th><th>Tipe Absen</th><th>Status</th></tr></thead><tbody>';
 
+    const ketLabel2={hadir:'Hadir',izin:'Izin',sakit:'Sakit',cuti:'Cuti',alpha:'Alpha'};
+    const ketBadge2={hadir:'badge-green',izin:'badge-blue',sakit:'badge-orange',cuti:'badge-gray',alpha:'badge-red'};
     html += displayRows.map((r,i)=>{
       const canCheck = !!r.nik;
       const isSynced = syncedKeys.has(r.nik+'|'+r.tanggal);
@@ -2439,15 +2462,19 @@ async function previewSyncData(){
       const statusBadge = isSynced
         ? '<span class="badge badge-green" style="font-size:.7rem"><i class="fas fa-check"></i> Sudah Sync</span>'
         : '<span class="badge badge-gray" style="font-size:.7rem">Belum Sync</span>';
+      const ket = r.keterangan||'hadir';
+      const ketBadgeHtml = '<span class="badge '+(ketBadge2[ket]||'badge-gray')+'" style="font-size:.7rem">'+(ketLabel2[ket]||ket)+'</span>';
+      const nullCell = '<span style="color:#94a3b8;font-size:.75rem;font-style:italic">null</span>';
       return '<tr'+rowStyle+'>'
         +'<td><input type="checkbox" class="sync-row-chk" data-idx="'+i+'" '+(canCheck&&!isSynced?'checked':'disabled')+' onchange="syncUpdateCount()" style="width:16px;height:16px;cursor:'+(canCheck&&!isSynced?'pointer':'not-allowed')+'"></td>'
         +'<td>'+(r.nik||'<span style="color:var(--red);font-size:.78rem">Kosong</span>')+'</td>'
         +'<td>'+r.nama+'</td>'
         +'<td>'+r.tanggal+'</td>'
-        +'<td style="color:var(--green);font-weight:700">'+(r.jamMasuk||'—')+'</td>'
-        +'<td style="color:var(--accent);font-weight:700">'+(r.jamPulang||'—')+'</td>'
-        +'<td style="font-size:.78rem">'+(r.checkInMachine||'—')+'</td>'
-        +'<td style="font-size:.78rem">'+(r.checkOutMachine||'—')+'</td>'
+        +'<td>'+ketBadgeHtml+'</td>'
+        +'<td style="color:var(--green);font-weight:700">'+(r.jamMasuk!=null ? r.jamMasuk||'—' : nullCell)+'</td>'
+        +'<td style="color:var(--accent);font-weight:700">'+(r.jamPulang!=null ? r.jamPulang||'—' : nullCell)+'</td>'
+        +'<td style="font-size:.78rem">'+(r.checkInMachine!=null ? r.checkInMachine : nullCell)+'</td>'
+        +'<td style="font-size:.78rem">'+(r.checkOutMachine!=null ? r.checkOutMachine : nullCell)+'</td>'
         +'<td style="font-size:.78rem">'+(r.absenceType||'—')+'</td>'
         +'<td>'+statusBadge+'</td>'
         +'</tr>';
