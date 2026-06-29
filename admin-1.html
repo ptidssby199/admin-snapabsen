@@ -2545,7 +2545,15 @@ async function runManualSync(){
   const btn = document.getElementById('btn-run-sync-preview');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-spinner spin"></i> Mengirim...';}
   try{
-    const payload={ table:tableName, nikColumn:nikColumn, rows:selectedRows };
+    // Untuk izin/sakit/cuti/alpha: hanya kirim nik, tanggal, absenceType
+    const NON_HADIR_TYPES = ['izin','sakit','cuti','alpha'];
+    const cleanRows = selectedRows.map(r=>{
+      if(NON_HADIR_TYPES.includes(r.keterangan)){
+        return { nik: r.nik, tanggal: r.tanggal, absenceType: r.absenceType };
+      }
+      return r;
+    });
+    const payload={ table:tableName, nikColumn:nikColumn, rows:cleanRows };
     const res=await fetch(bridgeConfig.bridgeUrl+'/sync',{
       method:'POST',
       headers:{'Content-Type':'application/json',...(bridgeConfig.token?{'Authorization':'Bearer '+bridgeConfig.token}:{})},
