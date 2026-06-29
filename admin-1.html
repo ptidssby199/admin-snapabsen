@@ -774,6 +774,10 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
               <input type="checkbox" id="sync-hide-synced" checked onchange="syncFilterChecklist()" style="width:15px;height:15px;cursor:pointer">
               <span>Sembunyikan yang sudah disync</span>
             </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;margin-left:4px" title="Aktifkan untuk bisa memilih dan sync ulang data yang sudah pernah disync">
+              <input type="checkbox" id="sync-allow-resync" onchange="syncFilterChecklist()" style="width:15px;height:15px;cursor:pointer">
+              <span style="color:var(--accent)"><i class="fas fa-rotate"></i> Izinkan sync ulang</span>
+            </label>
           </div>
           <div style="display:flex;gap:10px">
             <button class="btn btn-blue" onclick="previewSyncData()"><i class="fas fa-eye"></i> Preview & Pilih Data</button>
@@ -2426,6 +2430,7 @@ async function previewSyncData(){
     });
 
     const hideSync = document.getElementById('sync-hide-synced')?.checked;
+    const allowResync = document.getElementById('sync-allow-resync')?.checked;
     const withNik = rows.filter(r=>r.nik);
     const withoutNik = rows.length - withNik.length;
 
@@ -2436,8 +2441,8 @@ async function previewSyncData(){
       document.getElementById('sync-warning-text').textContent = withoutNik+' baris tidak memiliki NIK dan tidak bisa dicentang.';
     } else { warnEl.style.display='none'; }
 
-    // Filter rows
-    const displayRows = hideSync ? rows.filter(r=>!syncedKeys.has(r.nik+'|'+r.tanggal)) : rows;
+    // Filter rows: kalau allowResync aktif, jangan sembunyikan meski sudah disync
+    const displayRows = (hideSync && !allowResync) ? rows.filter(r=>!syncedKeys.has(r.nik+'|'+r.tanggal)) : rows;
     const hiddenCount = rows.length - displayRows.length;
 
     if(!displayRows.length){
@@ -2458,7 +2463,11 @@ async function previewSyncData(){
     html += displayRows.map((r,i)=>{
       const canCheck = !!r.nik;
       const isSynced = syncedKeys.has(r.nik+'|'+r.tanggal);
-      const rowStyle = isSynced ? ' style="opacity:.5;background:#f0fdf4"' : (!r.nik ? ' style="opacity:.5;background:#fef2f2"' : '');
+      // Kalau allowResync aktif, row yang sudah disync tetap bisa dicentang
+      const isDisabled = !canCheck || (isSynced && !allowResync);
+      const rowStyle = isSynced && !allowResync ? ' style="opacity:.5;background:#f0fdf4"'
+        : isSynced ? ' style="background:#fffbeb"'
+        : (!r.nik ? ' style="opacity:.5;background:#fef2f2"' : '');
       const statusBadge = isSynced
         ? '<span class="badge badge-green" style="font-size:.7rem"><i class="fas fa-check"></i> Sudah Sync</span>'
         : '<span class="badge badge-gray" style="font-size:.7rem">Belum Sync</span>';
@@ -2466,7 +2475,7 @@ async function previewSyncData(){
       const ketBadgeHtml = '<span class="badge '+(ketBadge2[ket]||'badge-gray')+'" style="font-size:.7rem">'+(ketLabel2[ket]||ket)+'</span>';
       const nullCell = '<span style="color:#94a3b8;font-size:.75rem;font-style:italic">null</span>';
       return '<tr'+rowStyle+'>'
-        +'<td><input type="checkbox" class="sync-row-chk" data-idx="'+i+'" '+(canCheck&&!isSynced?'checked':'disabled')+' onchange="syncUpdateCount()" style="width:16px;height:16px;cursor:'+(canCheck&&!isSynced?'pointer':'not-allowed')+'"></td>'
+        +'<td><input type="checkbox" class="sync-row-chk" data-idx="'+i+'" '+(isDisabled?'disabled':'checked')+' onchange="syncUpdateCount()" style="width:16px;height:16px;cursor:'+(isDisabled?'not-allowed':'pointer')+'"></td>'
         +'<td>'+(r.nik||'<span style="color:var(--red);font-size:.78rem">Kosong</span>')+'</td>'
         +'<td>'+r.nama+'</td>'
         +'<td>'+r.tanggal+'</td>'
