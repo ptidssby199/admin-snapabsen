@@ -2532,8 +2532,11 @@ async function previewSyncData(){
       const ket = r.keterangan||'hadir';
       const ketBadgeHtml = '<span class="badge '+(ketBadge2[ket]||'badge-gray')+'" style="font-size:.7rem">'+(ketLabel2[ket]||ket)+'</span>';
       const nullCell = '<span style="color:#94a3b8;font-size:.75rem;font-style:italic">null</span>';
+      // Gunakan "nik|tanggal" sebagai key unik — BUKAN index array,
+      // agar tidak salah mapping ketika sebagian baris disembunyikan
+      const rowKey = (r.nik+'|'+r.tanggal).replace(/"/g,'');
       return '<tr'+rowStyle+'>'
-        +'<td><input type="checkbox" class="sync-row-chk" data-idx="'+i+'" '+(isDisabled?'disabled':'checked')+' onchange="syncUpdateCount()" style="width:16px;height:16px;cursor:'+(isDisabled?'not-allowed':'pointer')+'"></td>'
+        +'<td><input type="checkbox" class="sync-row-chk" data-key="'+rowKey+'" '+(isDisabled?'disabled':'checked')+' onchange="syncUpdateCount()" style="width:16px;height:16px;cursor:'+(isDisabled?'not-allowed':'pointer')+'"></td>'
         +'<td>'+(r.nik||'<span style="color:var(--red);font-size:.78rem">Kosong</span>')+'</td>'
         +'<td>'+r.nama+'</td>'
         +'<td>'+r.tanggal+'</td>'
@@ -2593,8 +2596,10 @@ async function runManualSync(){
 
   const checkedBoxes = document.querySelectorAll('.sync-row-chk:checked:not(:disabled)');
   if(!checkedBoxes.length){showToast('Pilih minimal satu baris untuk disync','warning');return;}
-  const selectedIndices = Array.from(checkedBoxes).map(chk=>+chk.dataset.idx);
-  const selectedRows = selectedIndices.map(i=>syncPreviewData[i]).filter(r=>r && r.nik);
+  // Ambil key unik dari setiap checkbox yang dicentang, lalu cari row dari syncPreviewData
+  // menggunakan key "nik|tanggal" — BUKAN index array, agar tidak salah mapping
+  const selectedKeys = new Set(Array.from(checkedBoxes).map(chk=>chk.dataset.key));
+  const selectedRows = syncPreviewData.filter(r=>selectedKeys.has((r.nik+'|'+r.tanggal).replace(/"/g,'')));
 
   if(!selectedRows.length){showToast('Tidak ada baris valid yang dipilih','warning');return;}
   if(!confirm('Sync '+selectedRows.length+' baris terpilih ke tabel "'+tableName+'"?')) return;
