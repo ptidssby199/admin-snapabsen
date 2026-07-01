@@ -768,8 +768,10 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
           <div style="margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <label style="font-size:.82rem;color:var(--text-muted)">Pilih cepat:</label>
             <button class="btn btn-ghost" style="padding:5px 10px;font-size:.75rem" onclick="syncSetRange('hari')"><i class="fas fa-calendar-day"></i> Hari Ini</button>
+            <button class="btn btn-ghost" style="padding:5px 10px;font-size:.75rem" onclick="syncSetRange('kemarin')"><i class="fas fa-calendar-minus"></i> Kemarin</button>
             <button class="btn btn-ghost" style="padding:5px 10px;font-size:.75rem" onclick="syncSetRange('minggu')"><i class="fas fa-calendar-week"></i> Minggu Ini</button>
             <button class="btn btn-ghost" style="padding:5px 10px;font-size:.75rem" onclick="syncSetRange('bulan')"><i class="fas fa-calendar"></i> Bulan Ini</button>
+            <button class="btn btn-ghost" style="padding:5px 10px;font-size:.75rem" onclick="syncSetRange('bulanLalu')"><i class="fas fa-calendar-xmark"></i> Bulan Lalu</button>
             <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;margin-left:8px">
               <input type="checkbox" id="sync-hide-synced" checked onchange="syncFilterChecklist()" style="width:15px;height:15px;cursor:pointer">
               <span>Sembunyikan yang sudah disync</span>
@@ -2324,7 +2326,9 @@ let bridgeConfig=null, syncPreviewData=null;
 function initSyncPage(){
   loadBridgeConfigFromFirestore();
   loadSyncLog();
-  syncSetRange('bulan');
+  // Jika hari ini tanggal 1-5, default ke bulan lalu agar data akhir bulan kemarin tidak ketinggalan
+  const _today = new Date();
+  syncSetRange(_today.getDate() <= 5 ? 'bulanLalu' : 'bulan');
 }
 
 function syncSetRange(mode){
@@ -2334,12 +2338,20 @@ function syncSetRange(mode){
   let dari, sampai;
   if(mode==='hari'){
     dari = sampai = fmt(now);
+  } else if(mode==='kemarin'){
+    const kem = new Date(now); kem.setDate(now.getDate()-1);
+    dari = sampai = fmt(kem);
   } else if(mode==='minggu'){
     const day = now.getDay();
     const mon = new Date(now); mon.setDate(now.getDate() - (day===0?6:day-1));
     const sun = new Date(mon); sun.setDate(mon.getDate()+6);
     dari = fmt(mon); sampai = fmt(sun);
+  } else if(mode==='bulanLalu'){
+    const first = new Date(now.getFullYear(), now.getMonth()-1, 1);
+    const last  = new Date(now.getFullYear(), now.getMonth(), 0);
+    dari = fmt(first); sampai = fmt(last);
   } else {
+    // bulan ini
     dari = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-01';
     const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
     sampai = fmt(last);
@@ -2419,13 +2431,13 @@ async function buildSyncDataset(){
     }
     if(r.type==='masuk'){
       grouped[key].jamMasuk=r.time||'';
-      grouped[key].checkInMachine=r.checkInMachine||'SB1'; // hadir selalu punya mesin, default SB1
+      grouped[key].checkInMachine=r.checkInMachine||null; // kirim null kalau memang tidak ada
       if(r.absenceType) grouped[key].absenceType=r.absenceType;
       grouped[key].keterangan='hadir';
     }
     if(r.type==='pulang'){
       grouped[key].jamPulang=r.time||'';
-      grouped[key].checkOutMachine=r.checkOutMachine||'SB1'; // hadir selalu punya mesin, default SB1
+      grouped[key].checkOutMachine=r.checkOutMachine||null; // kirim null kalau memang tidak ada
     }
     if(NON_HADIR.includes(r.type)){
       // Izin/sakit/cuti/alpha: hanya isi absenceType, jam & mesin tetap null
