@@ -649,14 +649,14 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
       </div>
       <div class="page-view" id="page-laporan">
         <div class="card" style="margin-bottom:18px">
-          <div style="display:grid;grid-template-columns:140px 110px 1fr;gap:12px;align-items:end;margin-bottom:14px">
+          <div style="display:grid;grid-template-columns:160px 160px 1fr;gap:12px;align-items:end;margin-bottom:14px">
             <div>
-              <label style="display:block;font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:6px">Bulan</label>
-              <select id="lap-bulan" class="fm-input"><option value="1">Januari</option><option value="2">Februari</option><option value="3">Maret</option><option value="4">April</option><option value="5">Mei</option><option value="6">Juni</option><option value="7">Juli</option><option value="8">Agustus</option><option value="9">September</option><option value="10">Oktober</option><option value="11">November</option><option value="12">Desember</option></select>
+              <label style="display:block;font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:6px">Dari Tanggal</label>
+              <input type="date" id="lap-dari" class="fm-input">
             </div>
             <div>
-              <label style="display:block;font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:6px">Tahun</label>
-              <input type="number" id="lap-tahun" class="fm-input" value="2026" min="2020" max="2099">
+              <label style="display:block;font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:6px">Sampai Tanggal</label>
+              <input type="date" id="lap-sampai" class="fm-input">
             </div>
             <div>
               <label style="display:block;font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:6px">Cari Nama Karyawan</label>
@@ -684,7 +684,7 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
             <tbody id="rekap-tbody"></tbody>
           </table>
         </div>
-        <div id="laporan-empty" class="empty-state"><i class="fas fa-chart-column"></i><p>Pilih bulan &amp; tahun lalu klik Tampilkan Laporan</p></div>
+        <div id="laporan-empty" class="empty-state"><i class="fas fa-chart-column"></i><p>Pilih rentang tanggal lalu klik Tampilkan Laporan</p></div>
       </div>
       <div class="page-view" id="page-users">
         <div class="stat-row">
@@ -1836,20 +1836,42 @@ async function saveJadwalHarian(){
 let laporanData=[], laporanJadwalMap={}, currentDetailRows={};
 
 function initLaporanPage(){
-  if(!document.getElementById('lap-tahun').value) document.getElementById('lap-tahun').value=new Date().getFullYear();
+  if(!document.getElementById('lap-dari').value || !document.getElementById('lap-sampai').value){
+    const now=new Date();
+    const y=now.getFullYear(), m=now.getMonth();
+    const firstDay=new Date(y,m,1), lastDay=new Date(y,m+1,0);
+    const fmt=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    document.getElementById('lap-dari').value=fmt(firstDay);
+    document.getElementById('lap-sampai').value=fmt(lastDay);
+  }
 }
 
 async function loadLaporan(silent=false){
   if(!firebaseDb){showToast('Firebase belum terhubung','danger');return;}
-  const bulan=parseInt(document.getElementById('lap-bulan').value), tahun=parseInt(document.getElementById('lap-tahun').value);
-  const start=`${tahun}-${String(bulan).padStart(2,'0')}-01`;
-  const end=`${tahun}-${String(bulan).padStart(2,'0')}-31`;
-  const bulanKey=`${tahun}-${String(bulan).padStart(2,'0')}`;
+  const start=document.getElementById('lap-dari').value;
+  const end=document.getElementById('lap-sampai').value;
+  if(!start || !end){ showToast('Pilih rentang tanggal terlebih dahulu','danger'); return; }
+  if(start>end){ showToast('Tanggal "Dari" tidak boleh lebih besar dari "Sampai"','danger'); return; }
+  // Kumpulkan semua bulanKey yang dilewati periode ini (misal periode 2 bulan = 2 bulanKey)
+  // agar jadwal kerja tetap terambil meski periode melintasi pergantian bulan
+  const bulanKeys=[];
+  { let cy=parseInt(start.slice(0,4)), cm=parseInt(start.slice(5,7));
+    const ey=parseInt(end.slice(0,4)), em=parseInt(end.slice(5,7));
+    while(cy<ey || (cy===ey && cm<=em)){
+      bulanKeys.push(`${cy}-${String(cm).padStart(2,'0')}`);
+      cm++; if(cm>12){cm=1;cy++;}
+      if(bulanKeys.length>24) break; // safety guard
+    }
+  }
   if(!silent) showToast('Memuat laporan...','info');
   try{
+    // PENTING: hanya pakai SATU kondisi where pada field 'date' (>=) agar Firestore
+    // tidak butuh composite index. Batas akhir (<=end) difilter manual di JS (.filter di bawah).
     const [snapAbsen, snapJadwal, snapShifts] = await Promise.all([
       firebaseDb.collection('absensi').where('date','>=',start).get(),
-      firebaseDb.collection('jadwal').where('bulanKey','==',bulanKey).get(),
+      bulanKeys.length<=1
+        ? firebaseDb.collection('jadwal').where('bulanKey','==',bulanKeys[0]||'').get()
+        : firebaseDb.collection('jadwal').where('bulanKey','in',bulanKeys.slice(0,10)).get(),
       allShifts.length ? Promise.resolve(null) : firebaseDb.collection('shifts').get()
     ]);
     if(snapShifts) allShifts=snapShifts.docs.map(d=>({id:d.id,...d.data()}));
@@ -2020,11 +2042,23 @@ async function simpanEditAbsen(){
   }catch(e){ showToast('Gagal menyimpan: '+e.message,'danger'); }
 }
 
+function formatTglIndo(s){
+  if(!s) return s;
+  const d=new Date(s+'T00:00:00');
+  if(isNaN(d)) return s;
+  const B=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  return d.getDate()+' '+B[d.getMonth()]+' '+d.getFullYear();
+}
+function getLaporanPeriodeLabel(){
+  const start=document.getElementById('lap-dari').value, end=document.getElementById('lap-sampai').value;
+  if(!start||!end) return '—';
+  return start===end ? formatTglIndo(start) : formatTglIndo(start)+' s/d '+formatTglIndo(end);
+}
 // ---- EXPORT EXCEL (.xls bergaya, header bold) ----
 function exportExcel(){
   if(!laporanData.length){showToast('Muat laporan dulu sebelum export','warning');return;}
-  const bulan=document.getElementById('lap-bulan'), tahun=document.getElementById('lap-tahun').value;
-  const namaBulan=bulan.options[bulan.selectedIndex].text;
+  const periodeLabel=getLaporanPeriodeLabel();
+  const fileSuffix=(document.getElementById('lap-dari').value||'')+'_'+(document.getElementById('lap-sampai').value||'');
   const grouped={};
   laporanData.forEach(r=>{
     const key=(r.uid||'x')+'|'+(r.date||'');
@@ -2096,7 +2130,7 @@ function exportExcel(){
 <style>table{border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11px}td,th{padding:4px 6px}</style>
 </head><body><table>
   <tr><td colspan="${colCount}" style="font-size:16px;font-weight:700;color:#ffffff;background:#7c3aed;text-align:center;padding:10px;border:1px solid #6d28d9">LAPORAN REKAP ABSENSI PT. INDONESIA DWI SEMBILAN</td></tr>
-  <tr><td colspan="${colCount}" style="font-size:11px;font-weight:600;text-align:center;color:#475569;padding:4px;border:1px solid #d1d5db">Periode: ${esc(namaBulan)} ${esc(tahun)} &nbsp;•&nbsp; Diekspor: ${esc(new Date().toLocaleString('id-ID'))}</td></tr>
+  <tr><td colspan="${colCount}" style="font-size:11px;font-weight:600;text-align:center;color:#475569;padding:4px;border:1px solid #d1d5db">Periode: ${esc(periodeLabel)} &nbsp;•&nbsp; Diekspor: ${esc(new Date().toLocaleString('id-ID'))}</td></tr>
   <tr><td colspan="${colCount}" style="padding:2px;border:none"></td></tr>
   <tr>${hdr.map(h=>`<th style="font-weight:700;color:#ffffff;background:#7c3aed;border:1px solid #6d28d9;text-align:center">${esc(h)}</th>`).join('')}</tr>
   ${bodyRows}
@@ -2107,19 +2141,19 @@ function exportExcel(){
   ${summaryRow('Terlambat',telatCountExp)}
   ${summaryRow('Hadir Lengkap',hadirLengkap)}
   ${summaryRow('Tidak Hadir',tidakHadir)}
-  ${summaryRow('Periode',namaBulan+' '+tahun)}
+  ${summaryRow('Periode',periodeLabel)}
 </table></body></html>`;
   const blob=new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel;charset=utf-8'});
   const url=URL.createObjectURL(blob), a=document.createElement('a');
-  a.href=url; a.download='Rekap_Absensi_'+namaBulan+'_'+tahun+'.xls';
+  a.href=url; a.download='Rekap_Absensi_'+fileSuffix+'.xls';
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   showToast('Export berhasil!','success');
 }
 
 function exportHtmlFoto(){
   if(!laporanData.length){showToast('Muat laporan dulu sebelum export','warning');return;}
-  const bulan=document.getElementById('lap-bulan'), tahun=document.getElementById('lap-tahun').value;
-  const namaBulan=bulan.options[bulan.selectedIndex].text;
+  const periodeLabel=getLaporanPeriodeLabel();
+  const fileSuffix=(document.getElementById('lap-dari').value||'')+'_'+(document.getElementById('lap-sampai').value||'');
   const grouped={};
   laporanData.forEach(r=>{
     const key=(r.uid||'x')+'|'+(r.date||'');
@@ -2136,14 +2170,14 @@ function exportHtmlFoto(){
     const mapCell=(r.lat&&r.lng)?'<a href="https://www.google.com/maps?q='+r.lat+','+r.lng+'" target="_blank">Lihat Lokasi</a>':'—';
     return `<tr><td>${i+1}</td><td>${r.nama}</td><td>${tgl}</td><td>${r.masuk}</td><td>${r.pulang}</td><td style="text-align:center">${fotoCell}</td><td style="text-align:center">${fotoPulangCell}</td><td style="text-align:center">${mapCell}</td></tr>`;
   }).join('');
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Laporan Absensi ${namaBulan} ${tahun}</title>
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Laporan Absensi ${periodeLabel}</title>
   <style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;font-size:13px}th{background:#7c3aed;color:#fff}h1{color:#7c3aed}</style>
-  </head><body><h1>Laporan Rekap Absensi — ${namaBulan} ${tahun}</h1>
+  </head><body><h1>Laporan Rekap Absensi — ${periodeLabel}</h1>
   <table><thead><tr><th>No</th><th>Nama</th><th>Tanggal</th><th>Masuk</th><th>Pulang</th><th>Foto Masuk</th><th>Foto Pulang</th><th>Lokasi</th></tr></thead><tbody>${body}</tbody></table>
   </body></html>`;
   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
   const url=URL.createObjectURL(blob), a=document.createElement('a');
-  a.href=url; a.download='Laporan_Foto_'+namaBulan+'_'+tahun+'.html';
+  a.href=url; a.download='Laporan_Foto_'+fileSuffix+'.html';
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   showToast('Export berhasil!','success');
 }
@@ -2385,13 +2419,13 @@ async function buildSyncDataset(){
     }
     if(r.type==='masuk'){
       grouped[key].jamMasuk=r.time||'';
-      if(r.checkInMachine) grouped[key].checkInMachine=r.checkInMachine;
+      grouped[key].checkInMachine=r.checkInMachine||'SB1'; // hadir selalu punya mesin, default SB1
       if(r.absenceType) grouped[key].absenceType=r.absenceType;
       grouped[key].keterangan='hadir';
     }
     if(r.type==='pulang'){
       grouped[key].jamPulang=r.time||'';
-      if(r.checkOutMachine) grouped[key].checkOutMachine=r.checkOutMachine;
+      grouped[key].checkOutMachine=r.checkOutMachine||'SB1'; // hadir selalu punya mesin, default SB1
     }
     if(NON_HADIR.includes(r.type)){
       // Izin/sakit/cuti/alpha: hanya isi absenceType, jam & mesin tetap null
