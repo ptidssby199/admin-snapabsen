@@ -802,6 +802,18 @@ select.fm-input:focus,input.fm-input:focus{outline:none;border-color:var(--prima
           <div id="sync-preview-table"></div>
         </div>
 
+        <!-- Log hasil sync per baris -->
+        <div class="card" id="sync-result-log" style="display:none;margin-bottom:18px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <h3 style="font-size:1rem"><i class="fas fa-terminal" style="margin-right:6px;color:var(--primary)"></i>Log Hasil Sync</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span id="srl-summary" style="font-size:.82rem"></span>
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:.75rem" onclick="document.getElementById('sync-result-log').style.display='none'"><i class="fas fa-xmark"></i> Tutup</button>
+            </div>
+          </div>
+          <div id="srl-body" style="max-height:320px;overflow-y:auto;font-size:.8rem;font-family:monospace;background:#0f172a;border-radius:8px;padding:12px 14px;line-height:1.8"></div>
+        </div>
+
         <div class="card">
           <h3 style="margin-bottom:14px;font-size:1.05rem"><i class="fas fa-clock-rotate-left" style="margin-right:6px;color:var(--text-muted)"></i>Riwayat Sync</h3>
           <div id="sync-log-table"><div class="empty-state"><i class="fas fa-inbox"></i><p>Belum ada riwayat sync</p></div></div>
@@ -2579,7 +2591,6 @@ async function runManualSync(){
   const nikColumn=document.getElementById('sync-nik-column').value.trim();
   if(!tableName||!nikColumn){showToast('Isi nama tabel dan kolom NIK tujuan','warning');return;}
 
-  // Ambil baris yang dicentang
   const checkedBoxes = document.querySelectorAll('.sync-row-chk:checked:not(:disabled)');
   if(!checkedBoxes.length){showToast('Pilih minimal satu baris untuk disync','warning');return;}
   const selectedIndices = Array.from(checkedBoxes).map(chk=>+chk.dataset.idx);
@@ -2590,8 +2601,17 @@ async function runManualSync(){
 
   const btn = document.getElementById('btn-run-sync-preview');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-spinner spin"></i> Mengirim...';}
+
+  // Tampilkan log panel & mulai streaming log
+  const logPanel = document.getElementById('sync-result-log');
+  const logBody  = document.getElementById('srl-body');
+  const logSum   = document.getElementById('srl-summary');
+  logPanel.style.display='block';
+  logBody.innerHTML='<span style="color:#94a3b8">Mengirim '+selectedRows.length+' baris ke bridge...</span>';
+  logSum.innerHTML='';
+  logPanel.scrollIntoView({behavior:'smooth',block:'nearest'});
+
   try{
-    // Untuk izin/sakit/cuti/alpha: hanya kirim nik, tanggal, absenceType
     const NON_HADIR_TYPES = ['izin','sakit','cuti','alpha'];
     const cleanRows = selectedRows.map(r=>{
       if(NON_HADIR_TYPES.includes(r.keterangan)){
@@ -2607,19 +2627,65 @@ async function runManualSync(){
     });
     if(!res.ok) throw new Error('Bridge merespon HTTP '+res.status);
     const result=await res.json();
+
+    // Build result map dari response bridge (per baris, akurat INSERT/UPDATE/error)
+    const resultMap={};
+    (result.results||[]).forEach(r=>{ resultMap[(r.nik||'')+'|'+(r.tanggal||'')]=r; });
+
+    // Nama karyawan map dari selectedRows
+    const namaMap={};
+    selectedRows.forEach(r=>{ namaMap[r.nik+'|'+r.tanggal]=r.nama||'—'; });
+
+    // Render log per baris
+    const now=new Date();
+    const ts='['+now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0')+'] ';
+    const header=`<div style="color:#64748b;margin-bottom:6px;border-bottom:1px solid #1e293b;padding-bottom:6px">${ts}Sync ke <span style="color:#a5b4fc">${tableName}</span> — ${selectedRows.length} baris</div>`;
+
+    const lines = selectedRows.map(r=>{
+      const key=r.nik+'|'+r.tanggal;
+      const nama=r.nama||'—';
+      const br=resultMap[key];
+      if(!br){
+        // Tidak ada di result map — kemungkinan bridge lama tanpa field results, fallback error map
+        const errFallback=(result.errors||[]).find(e=>e.nik===r.nik&&e.tanggal===r.tanggal);
+        if(errFallback){
+          return `<div><span style="color:#f87171">✗ GAGAL </span> <span style="color:#fbbf24;font-weight:bold">${r.nik}</span> <span style="color:#94a3b8">${r.tanggal}</span> <span style="color:#e2e8f0">${nama}</span>  <span style="color:#f87171;font-size:.75rem">— ${errFallback.error}</span></div>`;
+        }
+        return `<div><span style="color:#4ade80">✓ OK    </span> <span style="color:#fbbf24;font-weight:bold">${r.nik}</span> <span style="color:#94a3b8">${r.tanggal}</span> <span style="color:#e2e8f0">${nama}</span></div>`;
+      }
+      if(!br.ok){
+        return `<div><span style="color:#f87171">✗ GAGAL </span> <span style="color:#fbbf24;font-weight:bold">${r.nik}</span> <span style="color:#94a3b8">${r.tanggal}</span> <span style="color:#e2e8f0">${nama}</span>  <span style="color:#f87171;font-size:.75rem">— ${br.error||'error'}</span></div>`;
+      }
+      const aksiColor = br.action==='INSERT' ? '#34d399' : '#60a5fa';
+      const aksiLabel = br.action==='INSERT' ? 'INSERT' : 'UPDATE';
+      return `<div><span style="color:#4ade80">✓ OK    </span> <span style="color:#fbbf24;font-weight:bold">${r.nik}</span> <span style="color:#94a3b8">${r.tanggal}</span> <span style="color:#e2e8f0">${nama}</span>  <span style="color:${aksiColor};font-size:.75rem">[${aksiLabel}]</span></div>`;
+    });
+
+    const errCount=(result.errors||[]).length;
+    const okCount=selectedRows.length-errCount;
+    const footer=`<div style="color:#64748b;margin-top:6px;border-top:1px solid #1e293b;padding-top:6px">Selesai: <span style="color:#4ade80">${result.inserted||0} INSERT</span>, <span style="color:#60a5fa">${result.updated||0} UPDATE</span>, <span style="color:#f87171">${result.failed||0} gagal</span></div>`;
+    logBody.innerHTML=header+lines.join('')+footer;
+
+    // Summary badge
+    logSum.innerHTML=
+      '<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 8px;font-size:.75rem;font-weight:700;margin-right:4px">'+okCount+' Berhasil</span>'+
+      (errCount?'<span style="background:#fee2e2;color:#dc2626;border-radius:5px;padding:2px 8px;font-size:.75rem;font-weight:700">'+errCount+' Gagal</span>':'');
+
     const syncedKeys = selectedRows.map(r=>r.nik+'|'+r.tanggal);
-    const dari = document.getElementById('sync-dari').value;
-    const sampai = document.getElementById('sync-sampai').value;
+    const dari=document.getElementById('sync-dari').value;
+    const sampai=document.getElementById('sync-sampai').value;
+    const finalStatus = errCount===selectedRows.length ? 'error' : errCount>0 ? 'partial' : 'success';
     await saveSyncLogEntry({
       tableName, nikColumn, totalRows:selectedRows.length,
       skippedRows:(syncPreviewData?.length||0)-selectedRows.length,
-      status:'success', message:result.message||'Sync berhasil',
-      timestamp:new Date().toISOString(),
-      dari, sampai, syncedKeys
+      status:finalStatus, message:result.message||'Sync selesai',
+      timestamp:new Date().toISOString(), dari, sampai, syncedKeys
     });
-    showToast('Sync berhasil! '+selectedRows.length+' baris dikirim ke '+tableName,'success');
+    showToast(okCount+' berhasil, '+errCount+' gagal — lihat log di bawah', errCount?'warning':'success');
     loadSyncLog();
   }catch(e){
+    logBody.innerHTML='<span style="color:#f87171">✗ ERROR FATAL: '+e.message+'</span>';
+    logSum.innerHTML='<span style="background:#fee2e2;color:#dc2626;border-radius:5px;padding:2px 8px;font-size:.75rem;font-weight:700">Gagal Total</span>';
     await saveSyncLogEntry({tableName,nikColumn,totalRows:0,skippedRows:0,status:'error',message:e.message,timestamp:new Date().toISOString()});
     showToast('Sync gagal: '+e.message,'danger');
     loadSyncLog();
